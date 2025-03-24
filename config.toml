@@ -1,0 +1,8 @@
+# 机器人QQ号 (必填)
+bot_uin = ""  
+
+# WebSocket服务器地址
+ws_uri = "ws://localhost:3001"
+
+# 鉴权令牌（napcat服务器）
+token = ""
