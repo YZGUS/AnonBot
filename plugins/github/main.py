@@ -31,7 +31,7 @@ class GithubPlugin(BasePlugin):
                 msg.group_id, text="Ncatbot GitHub 插件测试成功喵"
             )
         elif msg.raw_message == "Github Trending":
-            await self.api.post_group_msg(msg.group_id, text=self.get_trending())
+            await self.api.post_group_msg(msg.group_id, markdown=self.get_trending())
 
     def get_trending(self):
         current_hour = datetime.now().strftime("%Y-%m-%d-%H")
@@ -40,17 +40,27 @@ class GithubPlugin(BasePlugin):
             if file_path.exists():
                 with open(file_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    result = "GitHub Trending 热门项目：\n"
+                    result = "## 🔥 GitHub Trending 热门项目\n\n"
                     for idx, item in enumerate(data, 1):
                         project = Project.from_dict(item)
-                        result += f"{idx}. {project.owner}/{project.repo} - ⭐{project.stars} (+{project.today_stars})\n"
+                        # 项目名称和链接
+                        result += f"### {idx}. [{project.owner}/{project.repo}]({project.url})\n"
+                        # 星星和今日新增
+                        result += f"⭐ {project.stars:,} (今日 +{project.today_stars})"
+                        # 语言
+                        if project.language:
+                            result += f" | 🔠 {project.language}"
+                        # 分叉数
+                        result += f" | 🍴 {project.forks:,}\n"
+                        # 项目描述
                         if project.description:
-                            result += f"   {project.description[:80]}{'...' if len(project.description) > 80 else ''}\n"
+                            result += f"> {project.description}\n"
+                        result += "\n"
                     return result
-            return "当前暂无 GitHub Trending 数据，请稍后再试"
+            return "### ⚠️ 当前暂无 GitHub Trending 数据\n请稍后再试"
         except Exception as e:
             print(f"获取Trending数据失败: {str(e)}")
-            return "读取 GitHub Trending 数据失败"
+            return "### ❌ 读取 GitHub Trending 数据失败"
 
     @bot.private_event()
     async def on_private_event(self, msg: PrivateMessage):
@@ -59,7 +69,7 @@ class GithubPlugin(BasePlugin):
                 msg.user_id, text="Ncatbot GitHub 插件测试成功喵"
             )
         elif msg.raw_message == "Github Trending":
-            await self.api.post_private_msg(msg.user_id, text=self.get_trending())
+            await self.api.post_private_msg(msg.user_id, markdown=self.get_trending())
 
     def get_trending_task(self):
         try:
