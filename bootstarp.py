@@ -1,12 +1,11 @@
-from ncatbot.core import BotClient
-from ncatbot.core.message import GroupMessage, PrivateMessage
-from ncatbot.utils.config import config
-from ncatbot.utils.logger import get_log
+import signal
 import tomllib
 
-_log = get_log()
+from ncatbot.core import BotClient
+from ncatbot.utils.config import config
 
-# TODO: 测试完成删除配置
+from scheduler import scheduler  # 导入调度器
+
 with open("config.toml", "rb") as f:
     cfg = tomllib.load(f)
     config.set_bot_uin(cfg["bot_uin"])
@@ -16,19 +15,26 @@ with open("config.toml", "rb") as f:
 bot = BotClient()
 
 
-@bot.group_event()
-async def on_group_message(msg: GroupMessage):
-    _log.info(msg)
-    if msg.raw_message == "测试":
-        await msg.reply(text="NcatBot 测试成功喵~")
+# 示例：如何添加一个定时任务
+async def example_task():
+    print("执行定时任务...")
 
 
-@bot.private_event()
-async def on_private_message(msg: PrivateMessage):
-    _log.info(msg)
-    if msg.raw_message == "测试":
-        await bot.api.post_private_msg(msg.user_id, text="NcatBot 测试成功喵~")
+# 注册信号处理程序，确保退出时清理任务
+def handle_shutdown(sig, frame):
+    print("正在关闭定时任务...")
+    scheduler.stop_all_tasks()
+    # 让程序自然退出
+    exit(0)
 
 
 if __name__ == "__main__":
-    bot.run()
+    # 注册信号处理
+    signal.signal(signal.SIGINT, handle_shutdown)
+    signal.signal(signal.SIGTERM, handle_shutdown)
+
+    # 启动机器人
+    try:
+        bot.run()
+    except KeyboardInterrupt:
+        handle_shutdown(None, None)
