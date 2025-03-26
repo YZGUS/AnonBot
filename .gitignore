@@ -174,7 +174,7 @@ cython_debug/
 .pypirc
 
 # 配置文件
-config.toml
+/config.toml
 
 # 日志和插件数据目录
 logs/
