@@ -22,7 +22,7 @@ class KfcPlugin(BasePlugin):
 
     @bot.group_event()
     async def on_group_event(self, msg: GroupMessage):
-        if self.is_hit(msg):
+        if self.is_hit(msg.raw_message):
             await self.api.post_group_msg(
                 msg.group_id, text=self.get_content()
             )
