@@ -175,11 +175,13 @@ cython_debug/
 
 # 配置文件
 /config.toml
+plugins/deepseek/config/config.toml
 
 # 日志和插件数据目录
 logs/
 plugins/github/logs/
 plugins/github/trending/
+plugins/deepseek/data/
 
 # idea
 .idea/
