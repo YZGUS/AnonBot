@@ -177,12 +177,14 @@ cython_debug/
 /config.toml
 plugins/deepseek/config/config.toml
 plugins/musiccard/config/config.toml
+plugins/chatrecord/config/config.toml
 
 # 日志和插件数据目录
 logs/
 plugins/github/logs/
 plugins/github/trending/
 plugins/deepseek/data/
+plugins/chatrecord/data/
 
 # idea
 .idea/

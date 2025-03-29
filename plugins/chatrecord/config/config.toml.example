@@ -1,0 +1,14 @@
+# ChatRecord 插件配置示例
+# 请复制此文件为 config.toml 并进行适当修改
+
+# Deepseek API 密钥配置
+api_key = ""
+
+# 白名单配置
+[whitelist]
+# 允许使用此插件的群组ID列表
+group_ids = [123456789, 987654321]
+# 允许使用此插件的用户ID列表
+user_ids = [123456789, 987654321]
+# 超级管理员ID列表
+admin_ids = [123456789]
