@@ -1,0 +1,32 @@
+# 情感支持插件配置示例文件
+# 请复制此文件为 config.toml 并填入相应配置
+
+# 使用DeepSeek API密钥
+# 获取方式: 访问 https://deepseek.com 注册账号并获取API密钥
+api_key = "your_deepseek_api_key_here"
+
+# 白名单设置
+[whitelist]
+# 允许的群组ID列表
+# 只有在这些群中的消息才会被检测和回复
+group_ids = [123456789]
+# 允许的用户ID列表
+# 只有这些用户的消息才会被检测和回复
+user_ids = [987654321]
+
+# 情感分析设置
+[sentiment]
+# 触发阈值，低于此值将触发安慰回复
+# 取值范围: 0-1，值越低表示情感越消极
+# 建议值: 0.2-0.3
+threshold = 0.2
+
+# 模型设置
+[model]
+# 使用的默认模型
+# 可选: "deepseek-chat", "deepseek-v2" 等
+default = "deepseek-chat"
+# 模型温度参数，控制输出的随机性
+# 取值范围: 0-1，值越高表示输出越随机
+# 建议值: 0.7
+temperature = 0.7
