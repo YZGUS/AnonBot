@@ -1,0 +1,11 @@
+# 忽略私密的请求头配置文件
+config/headers.json
+
+# 忽略数据目录中的数据文件
+data/*.json
+data/*.html
+
+# 忽略Python缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
