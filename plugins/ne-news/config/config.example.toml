@@ -1,0 +1,19 @@
+# 网易新闻热榜配置
+
+# 白名单配置
+[whitelist]
+# 允许查看网易新闻热榜的群组ID列表
+group_ids = [123456789]
+# 允许查看网易新闻热榜的用户ID列表
+user_ids = [123456789]
+
+# 数据配置
+[data]
+# 保存的热榜数量
+hot_count = 50
+# 热门话题数量
+hot_topic_count = 10
+# 每个话题保存的评论数量
+comment_count = 10
+# 数据更新间隔(秒)
+update_interval = 300 

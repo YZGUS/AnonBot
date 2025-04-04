@@ -192,6 +192,12 @@ plugins/kfc/config/config.toml
 plugins/tieba/config/config.toml
 plugins/xueqiu/config/config.toml
 plugins/xueqiu/config/headers.json
+plugins/tencent-news/config/config.toml
+plugins/tencent-news/config/headers.json
+plugins/ne-news/config/config.toml
+plugins/ne-news/config/headers.json
+plugins/xiaohongshu/config/config.toml
+plugins/xiaohongshu/config/headers.json
 
 # 日志和插件数据目录
 logs/
