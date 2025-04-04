@@ -1,16 +1,53 @@
 import signal
 import tomllib
+import os
 
 from ncatbot.core import BotClient
 from ncatbot.utils.config import config
 
 from scheduler import scheduler  # 导入调度器
 
+# 读取主配置文件
 with open("config.toml", "rb") as f:
     cfg = tomllib.load(f)
     config.set_bot_uin(cfg["bot_uin"])
     config.set_ws_uri(cfg["ws_uri"])
     config.set_token(cfg["token"])
+
+# 设置忽略目录
+ignored_dirs = []
+
+# 读取框架配置文件
+try:
+    if os.path.exists("ncatbot.toml"):
+        with open("ncatbot.toml", "rb") as f:
+            ncatbot_cfg = tomllib.load(f)
+
+            # 从配置文件中读取忽略目录
+            if (
+                "ncatbot" in ncatbot_cfg
+                and "ignored_directories" in ncatbot_cfg["ncatbot"]
+            ):
+                ignored_dirs.extend(ncatbot_cfg["ncatbot"]["ignored_directories"])
+except Exception as e:
+    print(f"读取框架配置文件出错: {e}")
+
+# 读取 .ncatbotignore 文件
+try:
+    if os.path.exists(".ncatbotignore"):
+        with open(".ncatbotignore", "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    ignored_dirs.append(line)
+except Exception as e:
+    print(f"读取 .ncatbotignore 文件出错: {e}")
+
+# 去重并设置忽略目录
+if ignored_dirs:
+    ignored_dirs = list(set(ignored_dirs))
+    config.set_ignored_directories(ignored_dirs)
+    print(f"已设置忽略目录: {', '.join(ignored_dirs)}")
 
 bot = BotClient()
 

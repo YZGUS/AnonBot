@@ -207,3 +207,9 @@ plugins/*/test.py
 
 # macOS系统文件
 .DS_Store
+
+# 测试目录内容忽略但保留结构
+test/*
+!test/README.md
+tests/*
+!tests/README.md

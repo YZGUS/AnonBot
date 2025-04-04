@@ -1,0 +1,38 @@
+# 百度热搜插件配置文件
+
+# 基本设置
+[basic]
+update_interval = 300  # 更新间隔，单位：秒
+max_items = 10         # 默认展示条数
+log_level = "INFO"     # 日志级别：DEBUG, INFO, WARNING, ERROR
+
+# 访问控制设置
+[access]
+white_list = []        # 用户白名单，留空表示所有用户都可以使用
+group_white_list = []  # 群组白名单，留空表示所有群组都可以使用
+
+# 数据存储设置
+[storage]
+max_files_per_day = 20 # 每天最多保存的文件数
+keep_days = 7          # 保留最近几天的数据
+
+# UI设置
+[ui]
+# 消息头部模板
+header_template = """📊 百度热搜榜 ({time})
+
+"""
+
+# 单条热搜项目模板
+item_template = "{rank}. {highlight}{title}{hot_tag}\n"
+
+# 消息底部模板
+footer_template = """
+💡 提示: 发送「百度热搜 数字」可指定获取的条数，如「百度热搜 20」
+发送「百度热搜 详情」可显示热搜链接
+"""
+
+# 百度特有设置
+[baidu_specific]
+# 分类标签对应的emoji
+category_emoji = { "热" = "🔥", "新" = "✨", "爆" = "💥", "沸" = "♨️", "商" = "🛒", "娱" = "🎬", "体" = "⚽", "情" = "💖" }
