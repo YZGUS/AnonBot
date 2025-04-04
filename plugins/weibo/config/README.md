@@ -59,12 +59,12 @@ comment_count = 10
 
 2. **数据配置**
    - `hot_count`: 热榜展示的条目数量
-   - `comment_count`: 每个话题保存的相关微博/评论数量
+   - `comment_count`: 每个话题保存的相关微博或评论数量
 
 ### 获取微博Cookie
 
 1. 使用Chrome或Edge浏览器登录微博网站(https://weibo.com)
-2. 按F12打开开发者工具，切换到"网络/Network"标签页
+2. 按F12打开开发者工具，切换到"网络"或"Network"标签页
 3. 刷新页面，选择任意一个请求
 4. 在请求头(Headers)中找到Cookie字段，复制完整内容
 5. 将复制的内容粘贴到headers.json的Cookie字段中
@@ -82,12 +82,12 @@ comment_count = 10
 热榜数据按照以下格式存储：
 
 ```
-plugins/weibo/data/年月日-小时/weibo_hot_年月日_时分秒.json
+plugins\weibo\data\年月日-小时\weibo_hot_年月日_时分秒.json
 ```
 
 例如：
 ```
-plugins/weibo/data/20250402-23/weibo_hot_20250402_231035.json
+plugins\weibo\data\20250402-23\weibo_hot_20250402_231035.json
 ```
 
 ## 常见问题
@@ -98,7 +98,7 @@ plugins/weibo/data/20250402-23/weibo_hot_20250402_231035.json
    - 查看日志文件了解详细错误信息
 
 2. **插件无响应**
-   - 确认用户/群组ID是否在白名单中
+   - 确认用户或群组ID是否在白名单中
    - 检查机器人是否正常运行
 
 3. **数据过期**

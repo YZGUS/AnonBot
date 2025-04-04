@@ -46,7 +46,7 @@ async def get_top_song(keyword: str) -> Optional[Dict[str, Any]]:
         "singer_str": "、".join(
             [singer.get("name", "未知歌手") for singer in top_song.get("singer", [])]
         )
-                      or "未知歌手",
+        or "未知歌手",
         "mid": top_song.get("mid", ""),
         "songmid": top_song.get("songmid", ""),
         "album": top_song.get("album", {}).get("name", "未知专辑"),
@@ -55,17 +55,17 @@ async def get_top_song(keyword: str) -> Optional[Dict[str, Any]]:
 
 
 def parse_search_command(command: str) -> Optional[str]:
-    command = command.lstrip("/")
-    parts = command.split()
+    # 处理/msearch命令格式
+    if command.startswith("/msearch "):
+        keyword = command[9:].strip()
+        return keyword if keyword else None
 
-    if not parts or parts[0].lower() != "msearch":
-        return None
+    # 处理"点歌"命令格式
+    if command.startswith("点歌 "):
+        keyword = command[3:].strip()
+        return keyword if keyword else None
 
-    if len(parts) == 1:
-        return None
-
-    keyword = " ".join(parts[1:])
-    return keyword
+    return None
 
 
 class MusicCardPlugin(BasePlugin):
@@ -135,10 +135,10 @@ class MusicCardPlugin(BasePlugin):
         return False
 
     async def search_and_send_music_card(
-            self,
-            keyword: str,
-            group_id: Optional[int] = None,
-            user_id: Optional[int] = None,
+        self,
+        keyword: str,
+        group_id: Optional[int] = None,
+        user_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         try:
             song = await get_top_song(keyword)
@@ -186,9 +186,13 @@ class MusicCardPlugin(BasePlugin):
                 singer=singer_str,
             )
             if group_id:
-                await self.sender.send_group_msg(group_id, {"group_id": group_id, "message": [music_card]})
+                await self.sender.send_group_msg(
+                    group_id, {"group_id": group_id, "message": [music_card]}
+                )
             elif user_id:
-                await self.sender.send_private_msg(user_id, {"user_id": user_id, "message": [music_card]})
+                await self.sender.send_private_msg(
+                    user_id, {"user_id": user_id, "message": [music_card]}
+                )
             else:
                 return {"status": "failed", "message": "未指定发送目标"}
 

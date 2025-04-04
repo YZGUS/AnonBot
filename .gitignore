@@ -175,12 +175,20 @@ cython_debug/
 
 # 配置文件
 /config.toml
+
+# 插件配置文件（敏感信息）
 plugins/deepseek/config/config.toml
 plugins/musiccard/config/config.toml
 plugins/chatrecord/config/config.toml
 plugins/emotional_support/config/config.toml
 plugins/weibo/config/config.toml
 plugins/weibo/config/headers.json
+plugins/douyin/config/config.toml
+plugins/douyin/config/headers.json
+plugins/zhihu/config/config.toml
+plugins/zhihu/config/headers.json
+plugins/github/config/config.toml
+plugins/kfc/config/config.toml
 
 # 日志和插件数据目录
 logs/
@@ -188,9 +196,14 @@ plugins/github/logs/
 plugins/github/trending/
 plugins/deepseek/data/
 plugins/chatrecord/data/
+plugins/*/data/
 
 # 测试文件
 plugins/weibo/test.py
+plugins/*/test.py
 
 # idea
 .idea/
+
+# macOS系统文件
+.DS_Store

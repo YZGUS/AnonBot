@@ -1,4 +1,4 @@
-# 情感支持插件 (Emotional Support Plugin)
+# 情感支持插件
 
 这个插件用于检测用户消息中的抑郁或负面情绪，并自动生成安慰回复。
 
@@ -9,24 +9,26 @@
 - 调用 DeepSeek AI 生成符合千早爱音角色设定的安慰回复
 - 支持白名单机制，只对特定群聊或用户生效
 - 可自定义情感阈值，调整触发条件
+- 避免命令前缀消息触发，防止与其他插件冲突
 
 ## 安装要求
 
-- Python 3.8+
+- Python 3.8 及以上版本
 - SnowNLP 库：`pip install snownlp`
 - Requests 库：`pip install requests`
 
 ## 配置方法
 
-1. 复制 `config/config.toml.example` 到 `config/config.toml`
+1. 复制 `config\config.toml.example` 到 `config\config.toml`
 2. 编辑 `config.toml` 文件：
    - 填入 DeepSeek API 密钥
    - 设置白名单群组和用户ID
    - 调整情感阈值和模型参数
+   - 设置需要忽略的命令前缀列表
 
 ```toml
 # 示例配置
-api_key = "your_deepseek_api_key"
+api_key = "你的DeepSeek密钥"
 
 [whitelist]
 group_ids = [123456789]
@@ -38,18 +40,36 @@ threshold = 0.2
 [model]
 default = "deepseek-chat"
 temperature = 0.7
+
+# 忽略的命令前缀列表，这些前缀开头的消息不会触发情感分析
+ignore_commands_prefixes = ["点歌", "ds ", "Github", "微博热榜", "/", "抖音热榜", "知乎热榜", "查询记录"]
 ```
 
 ## 使用说明
 
 插件会自动运行，无需手动触发。当白名单中的用户发送情感值低于阈值的消息时，会自动回复安慰文本。
 
+### 命令前缀识别
+
+插件会自动识别以下命令前缀，避免误触发：
+- `点歌` - 音乐卡片插件命令
+- `ds ` - DeepSeek AI插件命令
+- `Github` - GitHub插件命令
+- `微博热榜` - 微博热榜插件命令
+- `抖音热榜` - 抖音热榜插件命令
+- `知乎热榜` - 知乎热榜插件命令
+- `查询记录` - 聊天记录插件命令
+- `/` - 通用命令前缀
+
+您可以在配置文件中自定义需要忽略的命令前缀列表。
+
 ## 工作原理
 
-1. 插件接收到消息后检查是否为白名单用户/群组
-2. 使用 SnowNLP 分析消息情感值（0-1之间，越低越消极）
-3. 当情感值低于设定阈值时，调用 DeepSeek API 生成安慰回复
-4. 将生成的安慰文本直接回复给用户
+1. 插件接收到消息后检查是否以命令前缀开头
+2. 如果不是命令，则检查用户或群组是否在白名单中
+3. 使用 SnowNLP 分析消息情感值（0-1之间，越低越消极）
+4. 当情感值低于设定阈值时，调用 DeepSeek API 生成安慰回复
+5. 将生成的安慰文本直接回复给用户
 
 ## 安慰文本生成
 

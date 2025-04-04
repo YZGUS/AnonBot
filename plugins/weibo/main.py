@@ -284,6 +284,7 @@ class WeiboPlugin(BasePlugin):
 
         # 设置定时任务，每小时采集一次数据
         scheduler.add_random_minute_task(self.fetch_weibo_hot, 0, 5)
+        scheduler.add_task(self.check_config_update, 30)
         print(f"{self.name} 插件加载完成！")
 
     def load_config(self) -> None:

@@ -23,6 +23,7 @@ class Config:
     sentiment_threshold: float
     default_model: str
     temperature: float
+    ignore_commands_prefixes: List[str]
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Config":
@@ -33,6 +34,24 @@ class Config:
             sentiment_threshold=data.get("sentiment", {}).get("threshold", 0.2),
             default_model=data.get("model", {}).get("default", "deepseek-chat"),
             temperature=data.get("model", {}).get("temperature", 0.7),
+            ignore_commands_prefixes=data.get(
+                "ignore_commands_prefixes",
+                [
+                    "点歌",
+                    "ds ",
+                    "Github",
+                    "微博热榜",
+                    "/",
+                    "抖音热榜",
+                    "抖音热榜话题",
+                    "抖音话题详情",
+                    "知乎热榜",
+                    "知乎问题",
+                    "查询记录",
+                    "/cr_",  # 聊天记录插件私聊命令前缀
+                    "@",  # @机器人的情况
+                ],
+            ),
         )
 
 
@@ -99,11 +118,11 @@ async def generate_comfort_message(config: Config, text: str) -> str:
 
 
 async def call_deepseek_api(
-        config: Config,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = 2000,
+    config: Config,
+    messages: List[Dict[str, str]],
+    model: Optional[str] = None,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = 2000,
 ) -> str:
     """调用DeepSeek API"""
     if not config or not config.api_key:
@@ -224,10 +243,54 @@ class EmotionalSupportPlugin(BasePlugin):
                 print(f"成功加载 {self.name} 配置")
             else:
                 print(f"警告: {self.name} 配置文件不存在: {self.config_path}")
-                self.config = Config("", [], [], 0.2, "deepseek-chat", 0.7)
+                self.config = Config(
+                    "",
+                    [],
+                    [],
+                    0.2,
+                    "deepseek-chat",
+                    0.7,
+                    [
+                        "点歌",
+                        "ds ",
+                        "Github",
+                        "微博热榜",
+                        "/",
+                        "抖音热榜",
+                        "抖音热榜话题",
+                        "抖音话题详情",
+                        "知乎热榜",
+                        "知乎问题",
+                        "查询记录",
+                        "/cr_",  # 聊天记录插件私聊命令前缀
+                        "@",  # @机器人的情况
+                    ],
+                )
         except Exception as e:
             print(f"加载 {self.name} 配置出错: {str(e)}")
-            self.config = Config("", [], [], 0.2, "deepseek-chat", 0.7)
+            self.config = Config(
+                "",
+                [],
+                [],
+                0.2,
+                "deepseek-chat",
+                0.7,
+                [
+                    "点歌",
+                    "ds ",
+                    "Github",
+                    "微博热榜",
+                    "/",
+                    "抖音热榜",
+                    "抖音热榜话题",
+                    "抖音话题详情",
+                    "知乎热榜",
+                    "知乎问题",
+                    "查询记录",
+                    "/cr_",  # 聊天记录插件私聊命令前缀
+                    "@",  # @机器人的情况
+                ],
+            )
 
     def check_config_update(self) -> bool:
         try:
@@ -261,6 +324,13 @@ class EmotionalSupportPlugin(BasePlugin):
             if not msg.raw_message or msg.message_type != "group":
                 return
 
+            # 检查是否为命令，如果是命令则跳过情感分析
+            if any(
+                msg.raw_message.startswith(prefix)
+                for prefix in self.config.ignore_commands_prefixes
+            ):
+                return
+
             group_id = msg.group_id
             user_id = msg.sender.user_id
 
@@ -292,6 +362,13 @@ class EmotionalSupportPlugin(BasePlugin):
         try:
             # 只处理文本消息
             if not msg.raw_message or msg.message_type != "private":
+                return
+
+            # 检查是否为命令，如果是命令则跳过情感分析
+            if any(
+                msg.raw_message.startswith(prefix)
+                for prefix in self.config.ignore_commands_prefixes
+            ):
                 return
 
             user_id = msg.sender.user_id

@@ -234,8 +234,8 @@ class DeepSeekPlugin(BasePlugin):
         # 限制历史记录长度，保留最近的10轮对话（20条消息）
         if len(self.conversation_history[user_id_str]) > 20:
             self.conversation_history[user_id_str] = self.conversation_history[
-                                                         user_id_str
-                                                     ][-20:]
+                user_id_str
+            ][-20:]
 
     def clear_history(self, user_id: Union[int, str]) -> None:
         """清除用户的对话历史"""
@@ -244,11 +244,11 @@ class DeepSeekPlugin(BasePlugin):
             self.conversation_history[user_id_str] = []
 
     async def call_deepseek_api(
-            self,
-            messages: List[Dict[str, str]],
-            model: Optional[str] = None,
-            temperature: Optional[float] = None,
-            max_tokens: Optional[int] = 4000,
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = 4000,
     ) -> Dict[str, Any]:
         """调用DeepSeek API"""
         if not self.config or not self.config.api_key:
@@ -294,177 +294,189 @@ class DeepSeekPlugin(BasePlugin):
     @bot.group_event()
     async def on_group_event(self, msg: GroupMessage):
         """处理群消息事件"""
-        if msg.raw_message.startswith("ds "):
-            # 检查用户权限
-            if not self.is_user_authorized(msg.user_id, msg.group_id):
-                await self.api.post_group_msg(
-                    msg.group_id, text="🚫 您没有权限使用DeepSeek API"
-                )
-                return
+        # 判断是否为ds命令或@机器人
+        is_command = msg.raw_message.startswith("ds ")
+        is_at_bot = msg.raw_message.startswith("@") and "[CQ:at,qq=" in msg.raw_message
 
-            # 提取命令和查询内容
+        if not (is_command or is_at_bot):
+            return
+
+        # 检查用户权限
+        if not self.is_user_authorized(msg.user_id, msg.group_id):
+            await self.api.post_group_msg(
+                msg.group_id, text="🚫 您没有权限使用DeepSeek AI"
+            )
+            return
+
+        # 提取命令和查询内容
+        if is_command:
             cmd_content = msg.raw_message[3:].strip()
-
-            # 处理记忆模式切换命令
-            if cmd_content == "memory on":
-                self.memory_enabled[str(msg.user_id)] = True
+        else:
+            # 处理@消息，提取实际内容
+            cmd_content = msg.raw_message.split("]", 1)[-1].strip()
+            if not cmd_content:
                 await self.api.post_group_msg(
-                    msg.group_id, text="✅ 已开启记忆模式，我会记住我们的对话"
-                )
-                return
-            elif cmd_content == "memory off":
-                self.memory_enabled[str(msg.user_id)] = False
-                await self.api.post_group_msg(
-                    msg.group_id, text="❌ 已关闭记忆模式，我不会记住我们的对话"
-                )
-                return
-            elif cmd_content == "memory clear":
-                self.clear_history(msg.user_id)
-                await self.api.post_group_msg(
-                    msg.group_id, text="🧹 已清除您的对话历史"
-                )
-                return
-            elif cmd_content == "memory status":
-                is_memory_on = self.memory_enabled.get(str(msg.user_id), False)
-                history_count = len(self.get_user_history(msg.user_id))
-                full_history_count = len(
-                    self.conversation_history.get(str(msg.user_id), [])
-                )
-                status = "开启" if is_memory_on else "关闭"
-                await self.api.post_group_msg(
-                    msg.group_id,
-                    text=f"📊 记忆模式状态: {status}\n📝 当前会话消息数: {history_count}/{full_history_count}",
+                    msg.group_id, text="请在@我之后输入您的问题"
                 )
                 return
 
-            # 提取用户问题
-            query = cmd_content
-            if not query:
+        # 处理记忆模式切换命令
+        if cmd_content == "memory on":
+            self.memory_enabled[str(msg.user_id)] = True
+            await self.api.post_group_msg(
+                msg.group_id, text="✅ 已开启记忆模式，我会记住我们的对话"
+            )
+            return
+        elif cmd_content == "memory off":
+            self.memory_enabled[str(msg.user_id)] = False
+            await self.api.post_group_msg(
+                msg.group_id, text="❌ 已关闭记忆模式，我不会记住我们的对话"
+            )
+            return
+        elif cmd_content == "memory clear":
+            self.clear_history(msg.user_id)
+            await self.api.post_group_msg(msg.group_id, text="🧹 已清除您的对话历史")
+            return
+        elif cmd_content == "memory status":
+            is_memory_on = self.memory_enabled.get(str(msg.user_id), False)
+            history_count = len(self.get_user_history(msg.user_id))
+            full_history_count = len(
+                self.conversation_history.get(str(msg.user_id), [])
+            )
+            status = "开启" if is_memory_on else "关闭"
+            await self.api.post_group_msg(
+                msg.group_id,
+                text=f"📊 记忆模式状态: {status}\n📝 当前会话消息数: {history_count}/{full_history_count}",
+            )
+            return
+
+        # 提取用户问题
+        query = cmd_content
+        if not query:
+            await self.api.post_group_msg(msg.group_id, text="请输入您的问题")
+            return
+
+        # 构建消息列表
+        messages = []
+
+        # 如果启用了记忆模式，添加历史消息
+        if self.memory_enabled.get(str(msg.user_id), False):
+            history = self.get_user_history(msg.user_id)
+            if history:
+                messages.extend(history)
+
+        # 添加当前用户提问
+        messages.append({"role": "user", "content": query})
+
+        # 调用API
+        response = await self.call_deepseek_api(messages)
+
+        if "error" in response:
+            await self.api.post_group_msg(
+                msg.group_id, text=f"❌ 调用失败: {response['error']}"
+            )
+        else:
+            try:
+                answer = response["choices"][0]["message"]["content"]
+
+                # 如果启用了记忆模式，保存对话历史
+                if self.memory_enabled.get(str(msg.user_id), False):
+                    self.add_to_history(msg.user_id, "user", query)
+                    self.add_to_history(msg.user_id, "assistant", answer)
+
+                # 发送响应，使用markdown格式
+                await self.api.post_group_msg(msg.group_id, text=answer)
+            except (KeyError, IndexError) as e:
                 await self.api.post_group_msg(
-                    msg.group_id, text="请在命令后输入您的问题"
+                    msg.group_id, text=f"⚠️ 解析响应时出错: {str(e)}"
                 )
-                return
-
-            # 构建消息列表
-            messages = []
-
-            # 如果启用了记忆模式，添加历史消息
-            if self.memory_enabled.get(str(msg.user_id), False):
-                history = self.get_user_history(msg.user_id)
-                if history:
-                    messages.extend(history)
-
-            # 添加当前用户提问
-            messages.append({"role": "user", "content": query})
-
-            # 调用API
-            response = await self.call_deepseek_api(messages)
-
-            if "error" in response:
-                await self.api.post_group_msg(
-                    msg.group_id, text=f"❌ 调用失败: {response['error']}"
-                )
-            else:
-                try:
-                    answer = response["choices"][0]["message"]["content"]
-
-                    # 如果启用了记忆模式，保存对话历史
-                    if self.memory_enabled.get(str(msg.user_id), False):
-                        self.add_to_history(msg.user_id, "user", query)
-                        self.add_to_history(msg.user_id, "assistant", answer)
-
-                    # 发送响应，使用markdown格式
-                    await self.api.post_group_msg(msg.group_id, text=answer)
-                except (KeyError, IndexError) as e:
-                    await self.api.post_group_msg(
-                        msg.group_id, text=f"⚠️ 解析响应时出错: {str(e)}"
-                    )
 
     @bot.private_event()
     async def on_private_event(self, msg: PrivateMessage):
         """处理私聊消息事件"""
-        if msg.raw_message.startswith("ds "):
-            # 检查用户权限
-            if not self.is_user_authorized(msg.user_id):
+        # 判断是否为ds命令
+        is_command = msg.raw_message.startswith("ds ")
+
+        if not is_command:
+            return
+
+        # 检查用户权限
+        if not self.is_user_authorized(msg.user_id):
+            await self.api.post_private_msg(
+                msg.user_id, text="🚫 您没有权限使用DeepSeek AI"
+            )
+            return
+
+        # 提取命令和查询内容
+        cmd_content = msg.raw_message[3:].strip()
+
+        # 处理记忆模式切换命令
+        if cmd_content == "memory on":
+            self.memory_enabled[str(msg.user_id)] = True
+            await self.api.post_private_msg(
+                msg.user_id, text="✅ 已开启记忆模式，我会记住我们的对话"
+            )
+            return
+        elif cmd_content == "memory off":
+            self.memory_enabled[str(msg.user_id)] = False
+            await self.api.post_private_msg(
+                msg.user_id, text="❌ 已关闭记忆模式，我不会记住我们的对话"
+            )
+            return
+        elif cmd_content == "memory clear":
+            self.clear_history(msg.user_id)
+            await self.api.post_private_msg(msg.user_id, text="🧹 已清除您的对话历史")
+            return
+        elif cmd_content == "memory status":
+            is_memory_on = self.memory_enabled.get(str(msg.user_id), False)
+            history_count = len(self.get_user_history(msg.user_id))
+            full_history_count = len(
+                self.conversation_history.get(str(msg.user_id), [])
+            )
+            status = "开启" if is_memory_on else "关闭"
+            await self.api.post_private_msg(
+                msg.user_id,
+                text=f"📊 记忆模式状态: {status}\n📝 当前会话消息数: {history_count}/{full_history_count}",
+            )
+            return
+
+        # 提取用户问题
+        query = cmd_content
+        if not query:
+            await self.api.post_private_msg(msg.user_id, text="请输入您的问题")
+            return
+
+        # 构建消息列表
+        messages = []
+
+        # 如果启用了记忆模式，添加历史消息
+        if self.memory_enabled.get(str(msg.user_id), False):
+            history = self.get_user_history(msg.user_id)
+            if history:
+                messages.extend(history)
+
+        # 添加当前用户提问
+        messages.append({"role": "user", "content": query})
+
+        # 调用API
+        response = await self.call_deepseek_api(messages)
+
+        if "error" in response:
+            await self.api.post_private_msg(
+                msg.user_id, text=f"❌ 调用失败: {response['error']}"
+            )
+        else:
+            try:
+                answer = response["choices"][0]["message"]["content"]
+
+                # 如果启用了记忆模式，保存对话历史
+                if self.memory_enabled.get(str(msg.user_id), False):
+                    self.add_to_history(msg.user_id, "user", query)
+                    self.add_to_history(msg.user_id, "assistant", answer)
+
+                # 发送响应，使用markdown格式
+                await self.api.post_private_msg(msg.user_id, text=answer)
+            except (KeyError, IndexError) as e:
                 await self.api.post_private_msg(
-                    msg.user_id, text="🚫 您没有权限使用DeepSeek API"
+                    msg.user_id, text=f"⚠️ 解析响应时出错: {str(e)}"
                 )
-                return
-
-            # 提取命令和查询内容
-            cmd_content = msg.raw_message[3:].strip()
-
-            # 处理记忆模式切换命令
-            if cmd_content == "memory on":
-                self.memory_enabled[str(msg.user_id)] = True
-                await self.api.post_private_msg(
-                    msg.user_id, text="✅ 已开启记忆模式，我会记住我们的对话"
-                )
-                return
-            elif cmd_content == "memory off":
-                self.memory_enabled[str(msg.user_id)] = False
-                await self.api.post_private_msg(
-                    msg.user_id, text="❌ 已关闭记忆模式，我不会记住我们的对话"
-                )
-                return
-            elif cmd_content == "memory clear":
-                self.clear_history(msg.user_id)
-                await self.api.post_private_msg(
-                    msg.user_id, text="🧹 已清除您的对话历史"
-                )
-                return
-            elif cmd_content == "memory status":
-                is_memory_on = self.memory_enabled.get(str(msg.user_id), False)
-                history_count = len(self.get_user_history(msg.user_id))
-                full_history_count = len(
-                    self.conversation_history.get(str(msg.user_id), [])
-                )
-                status = "开启" if is_memory_on else "关闭"
-                await self.api.post_private_msg(
-                    msg.user_id,
-                    text=f"📊 记忆模式状态: {status}\n📝 当前会话消息数: {history_count}/{full_history_count}",
-                )
-                return
-
-            # 提取用户问题
-            query = cmd_content
-            if not query:
-                await self.api.post_private_msg(
-                    msg.user_id, text="请在命令后输入您的问题"
-                )
-                return
-
-            # 构建消息列表
-            messages = []
-
-            # 如果启用了记忆模式，添加历史消息
-            if self.memory_enabled.get(str(msg.user_id), False):
-                history = self.get_user_history(msg.user_id)
-                if history:
-                    messages.extend(history)
-
-            # 添加当前用户提问
-            messages.append({"role": "user", "content": query})
-
-            # 调用API
-            response = await self.call_deepseek_api(messages)
-
-            if "error" in response:
-                await self.api.post_private_msg(
-                    msg.user_id, text=f"❌ 调用失败: {response['error']}"
-                )
-            else:
-                try:
-                    answer = response["choices"][0]["message"]["content"]
-
-                    # 如果启用了记忆模式，保存对话历史
-                    if self.memory_enabled.get(str(msg.user_id), False):
-                        self.add_to_history(msg.user_id, "user", query)
-                        self.add_to_history(msg.user_id, "assistant", answer)
-
-                    # 发送响应，使用markdown格式
-                    await self.api.post_private_msg(msg.user_id, text=answer)
-                except (KeyError, IndexError) as e:
-                    await self.api.post_private_msg(
-                        msg.user_id, text=f"⚠️ 解析响应时出错: {str(e)}"
-                    )
