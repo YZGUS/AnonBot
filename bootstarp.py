@@ -14,7 +14,7 @@ with open("config.toml", "rb") as f:
     config.set_ws_uri(cfg["ws_uri"])
     config.set_token(cfg["token"])
 
-# 设置忽略目录
+# 输出忽略目录信息（仅用于日志记录，不进行设置）
 ignored_dirs = []
 
 # 读取框架配置文件
@@ -43,11 +43,12 @@ try:
 except Exception as e:
     print(f"读取 .ncatbotignore 文件出错: {e}")
 
-# 去重并设置忽略目录
+# 去重并输出日志（移除无效的设置代码）
 if ignored_dirs:
     ignored_dirs = list(set(ignored_dirs))
-    config.set_ignored_directories(ignored_dirs)
-    print(f"已设置忽略目录: {', '.join(ignored_dirs)}")
+    print(
+        f"注意: 以下目录不会被自动加载为插件（通过框架机制）: {', '.join(ignored_dirs)}"
+    )
 
 bot = BotClient()
 

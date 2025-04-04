@@ -3,12 +3,15 @@
 allow_plugins = true
 auto_reload = true
 
-# 屏蔽目录
-ignored_directories = [
-    "test",
-    "tests",
-    "__pycache__"
-]
+# 插件设置
+[plugins]
+auto_load = true
+paths = ["plugins"]  # 指定插件目录，只有此目录下的模块会被加载为插件
+
+# 以下目录不会被加载为插件（记录性质，无实际作用）
+# - test
+# - tests
+# - __pycache__
 
 # 日志设置
 [log]
@@ -16,11 +19,6 @@ level = "INFO"
 file = "logs/bot.log"
 max_size = 10  # MB
 backup_count = 5
-
-# 插件设置
-[plugins]
-auto_load = true
-paths = ["plugins"]
 
 # 安全设置
 [security]
