@@ -1,0 +1,26 @@
+# 百度贴吧热榜插件配置示例文件
+# 将此文件复制为config.toml并按需修改
+
+[basic]
+update_interval = 300  # 更新间隔（秒）
+max_items = 10  # 默认显示条数
+log_level = "INFO"  # 日志级别：DEBUG, INFO, WARNING, ERROR
+
+[access]
+white_list = [12345678, 87654321]  # 用户白名单，为空则允许所有用户使用
+group_white_list = [111222333, 444555666]  # 群组白名单，为空则允许所有群组使用
+
+[storage]
+max_files_per_day = 24  # 每天最多保存的文件数（按小时存储，建议至少24）
+keep_days = 7  # 保留最近几天的数据
+
+[ui]
+header_template = "📊 百度贴吧热榜 ({time})\n\n"  # 消息头部模板
+item_template = "{rank}. {highlight}{title}{hot_tag}\n"  # 条目模板
+footer_template = "\n💡 提示: 发送「贴吧热榜 数字」可指定获取的条数，如「贴吧热榜 20」"  # 消息尾部模板
+
+[tieba_specific]
+# 分类标签对应的emoji
+category_emoji = { "热" = "🔥", "新" = "✨", "爆" = "💥", "精" = "💎" }
+# 热度值显示格式 (可选: "full", "compact", "none")
+hot_value_format = "compact"  # full=完整显示，compact=大于1万时显示为万，none=不显示热度值 

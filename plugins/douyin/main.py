@@ -299,9 +299,6 @@ class DouyinPlugin(BasePlugin):
         # 设置定时任务，定期获取热榜数据
         scheduler.add_random_minute_task(self.fetch_douyin_hot, 0, 5)
 
-        # 立即执行一次，获取初始数据
-        await self.fetch_douyin_hot()
-
     def load_config(self) -> None:
         """加载配置文件"""
         if self.config_path.exists():
