@@ -1,0 +1,38 @@
+# 雪球财经热榜插件配置示例
+# 请将此文件复制为config.toml并按需修改
+
+# 白名单配置
+[whitelist]
+# 允许查看雪球热榜的群组ID列表，为空则对所有群组开放
+group_ids = [123456789]
+# 允许查看雪球热榜的用户ID列表，为空则对所有用户开放
+user_ids = [123456789]
+
+# 数据配置
+[data]
+# 保存的热榜数量
+hot_count = 50
+# 热门讨论数量
+hot_discussion_count = 10
+# 每个话题保存的评论数量
+comment_count = 10
+# 数据更新间隔(秒)
+update_interval = 300
+
+# 存储设置
+[storage]
+# 每日最大文件数（按小时存储，建议至少24）
+max_files_per_day = 24
+# 保留最近几天的数据
+keep_days = 7
+# 日志级别：DEBUG, INFO, WARNING, ERROR
+log_level = "INFO"
+
+# 界面设置
+[ui]
+# 头部模板
+header_template = "📊 雪球财经热榜 ({time})\n\n"
+# 条目模板
+item_template = "{rank}. {highlight}{title}{hot_tag}\n"
+# 底部模板
+footer_template = "\n💡 提示: 发送「雪球热榜 数字」可指定获取的条数，如「雪球热榜 20」" 

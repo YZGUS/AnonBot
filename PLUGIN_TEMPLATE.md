@@ -21,13 +21,14 @@
 
 ```
 plugins/{插件名称}/
-├── __init__.py      # 插件初始化文件
-├── main.py          # 插件主文件
-├── config/          # 配置目录
-│   ├── config.toml  # 配置文件
-│   └── README.md    # 配置说明
-└── data/            # 数据存储目录
-    └── {按需设计子目录}
+├── __init__.py           # 插件初始化文件
+├── main.py               # 插件主文件
+├── config/               # 配置目录
+│   ├── config.toml       # 配置文件（实际配置，被.gitignore排除）
+│   ├── config.example.toml # 配置示例文件（提交到仓库）
+│   └── README.md         # 配置说明
+└── data/                 # 数据存储目录
+    └── {按需设计子目录，推荐按日期-小时组织}
 ```
 
 ## 三、主要功能需求
@@ -64,7 +65,7 @@ plugins/{插件名称}/
   - [ ] group_white_list: 群组白名单
   
 - **存储设置**：
-  - [ ] max_files_per_day: 每日最大文件数
+  - [ ] max_files_per_day: 每日最大文件数（若按小时存储，建议至少24）
   - [ ] keep_days: 保留数据天数
   
 - **UI设置**：
@@ -73,6 +74,7 @@ plugins/{插件名称}/
   
 - **特定设置**：
   - [ ] {根据插件特点添加特定配置项}
+  - [ ] {如：热度值显示格式、特殊分类标签等}
 
 ## 五、输出格式需求
 
@@ -116,6 +118,10 @@ class Config:
     group_white_list: List[int]
     update_interval: int
     max_items: int
+    max_files_per_day: int
+    keep_days: int
+    log_level: str
+    templates: Dict[str, str]
     # 其他配置项...
     
     @classmethod
@@ -142,8 +148,14 @@ class DataCollector:
         # 数据解析逻辑
         
     def save_data(self, data: Dict[str, Any]) -> str:
-        """保存数据"""
-        # 数据保存逻辑
+        """保存数据到按小时组织的文件中"""
+        # 使用年月日-小时格式，如 "YYYYMMDD-HH"
+        now = datetime.now()
+        folder_name = now.strftime("%Y%m%d-%H")
+        folder_path = self.data_dir / folder_name
+        folder_path.mkdir(exist_ok=True, parents=True)
+        
+        # 保存逻辑
 ```
 
 ### 6.3 插件主类
@@ -158,22 +170,49 @@ class YourPlugin(BasePlugin):
     config = None
     config_path = None
     data_dir = None
+    latest_data_file = None
     
     async def on_load(self):
         """插件加载时执行"""
         # 初始化逻辑
+        base_path = Path(__file__).parent
+        self.config_path = base_path / "config" / "config.toml"
+        self.data_dir = base_path / "data"
+        self.data_dir.mkdir(exist_ok=True)
+        
+        # 加载配置
+        self.load_config()
+        
+        # 设置定时任务
+        scheduler.add_random_minute_task(self.fetch_data, 0, 5)
+        
+        # 立即执行一次数据获取
+        await self.fetch_data()
         
     def load_config(self) -> None:
         """加载配置"""
         # 配置加载逻辑
         
+    async def clean_old_files(self) -> None:
+        """清理旧数据文件（按日期-小时组织）"""
+        # 按日期前缀分组，然后清理
+        # 1. 清理超过keep_days的日期目录
+        # 2. 对保留的日期目录，控制每小时文件夹的文件数量
+        
     async def fetch_data(self) -> None:
         """获取数据"""
         # 数据获取逻辑
+        # 1. 使用DataCollector收集数据
+        # 2. 保存数据
+        # 3. 更新latest_data_file
+        # 4. 清理旧文件
         
-    def format_message(self, data: Dict[str, Any], count: int) -> str:
-        """格式化消息"""
+    def format_message(self, data: Dict[str, Any], count: int = None, show_detail: bool = False) -> str:
+        """格式化消息，支持详情视图和数量自定义"""
         # 消息格式化逻辑
+        # 1. 添加头部（标题、统计信息）
+        # 2. 添加主体（条目列表，支持排名美化、高亮标记等）
+        # 3. 添加底部（更新时间、使用提示）
         
     @bot.group_event()
     async def on_group_event(self, msg: GroupMessage):
@@ -200,8 +239,16 @@ class YourPlugin(BasePlugin):
 
 1. 配置项分类介绍
 2. 每个配置项的详细说明（含默认值和可选值）
-3. 完整配置示例
-4. 高级配置技巧
+3. 数据存储结构说明（如按小时组织的目录结构）
+4. 完整配置示例
+5. 高级配置技巧
+
+### 7.3 配置示例文件 (config.example.toml)
+
+1. 提供一个包含所有配置项的示例文件
+2. 使用明确的示例值（而非默认空值）
+3. 添加详细注释解释每个配置项的作用和可选值
+4. 在文件开头添加使用说明（如"将此文件复制为config.toml并按需修改"）
 
 ## 八、代码风格要求
 
@@ -212,6 +259,7 @@ class YourPlugin(BasePlugin):
 5. 使用日志而非print语句
 6. 使用有意义的变量和函数名称
 7. 正确处理异步函数
+8. 分离业务逻辑和展示层，便于后期维护
 
 ## 九、测试要求
 
@@ -219,8 +267,27 @@ class YourPlugin(BasePlugin):
 2. 错误处理测试
 3. 性能测试（响应时间）
 4. 持久性测试（配置加载与保存）
+5. 边界条件测试（如空数据、超大数据量等）
 
 ## 十、参考示例
 
 1. 百度热搜插件：`plugins/baidu`
-2. 情感支持插件：`plugins/emotional_support`
+2. 百度贴吧插件：`plugins/tieba`
+3. 抖音热榜插件：`plugins/douyin`
+4. 情感支持插件：`plugins/emotional_support`
+
+## 十一、安全与隐私注意事项
+
+1. 敏感配置文件不应提交到版本控制系统
+   - 实际配置文件（如`config.toml`）应在`.gitignore`中排除
+   - 提供示例配置文件（如`config.example.toml`）供用户参考
+   
+2. 数据存储与清理
+   - 按时间组织数据，便于管理和清理
+   - 实现自动清理机制，避免数据无限增长
+   - 考虑将敏感数据加密存储
+
+3. 错误处理与日志记录
+   - 避免在日志中记录敏感信息
+   - 日志级别可配置，生产环境推荐使用INFO或更高级别
+   - 错误信息应对用户友好，不暴露系统细节

@@ -190,6 +190,8 @@ plugins/zhihu/config/headers.json
 plugins/github/config/config.toml
 plugins/kfc/config/config.toml
 plugins/tieba/config/config.toml
+plugins/xueqiu/config/config.toml
+plugins/xueqiu/config/headers.json
 
 # 日志和插件数据目录
 logs/
