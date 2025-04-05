@@ -577,10 +577,6 @@ class NetEaseNewsPlugin(BasePlugin):
 
             message += f"{rank}. {title} {trend_icon}\n\n"
 
-            # 每三条添加分隔符
-            if i < len(trending_list) - 1 and (i + 1) % 3 == 0:
-                message += "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n"
-
         message += "━━━━━━━━━━━━━━━━━━\n"
         message += f"📊 更新时间: {timestamp}\n"
         message += "💡 提示: 发送「网易新闻 关键词」可查询相关新闻详情"

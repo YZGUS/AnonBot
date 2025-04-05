@@ -277,10 +277,6 @@ class XiaohongshuPlugin(BasePlugin):
                 f"{prefix}{title} {tag_str} 🔥 {view_num}\n🔗 链接: {item.www_url}\n"
             )
 
-            # 每三条添加分隔符
-            if i < len(items) - 1 and (i + 1) % 3 == 0:
-                message += "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n"
-
         message += f"━━━━━━━━━━━━━━━━━━\n📊 更新时间: {timestamp}\n💡 提示: 发送「小红书热榜 数字」或「🍠热榜 数字」可指定获取的条数"
 
         return message
@@ -304,10 +300,6 @@ class XiaohongshuPlugin(BasePlugin):
 
             message += f"{rank}. {title} 🔥 {view_num}\n🔗 链接: {item.www_url}\n"
 
-            # 每三条添加分隔符
-            if i < len(hot_items) - 1 and (i + 1) % 3 == 0:
-                message += "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n"
-
         message += f"━━━━━━━━━━━━━━━━━━\n📊 更新时间: {timestamp}\n💡 提示: 发送「小红书笔记 关键词」可查询相关笔记详情"
 
         return message
@@ -327,10 +319,6 @@ class XiaohongshuPlugin(BasePlugin):
             view_num = item.view_num
 
             message += f"{rank}. {title} 🔥 {view_num}\n🔗 链接: {item.www_url}\n"
-
-            # 每三条添加分隔符
-            if i < len(items) - 1 and (i + 1) % 3 == 0:
-                message += "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n"
 
         message += f"━━━━━━━━━━━━━━━━━━\n📊 更新时间: {timestamp}\n💡 提示: 发送「小红书热榜」或「🍠热榜」可查看完整热榜内容"
 
@@ -359,10 +347,6 @@ class XiaohongshuPlugin(BasePlugin):
             message += (
                 f"{rank}. {title} {tag_str} 🔥 {view_num}\n🔗 链接: {item.www_url}\n"
             )
-
-            # 每三条添加分隔符
-            if i < len(items) - 1 and (i + 1) % 3 == 0:
-                message += "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n"
 
         message += f"━━━━━━━━━━━━━━━━━━\n📊 更新时间: {timestamp}\n💡 提示: 发送「小红书热榜」或「🍠热榜」可查看完整热榜内容"
 

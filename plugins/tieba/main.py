@@ -466,10 +466,6 @@ class TiebaPlugin(BasePlugin):
             if show_detail and item.desc:
                 message += f"   📝 {item.desc}\n"
 
-            # 添加分隔符，每三个条目添加一次
-            if idx % 3 == 0 and idx < len(hot_items):
-                message += "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n"
-
         # 添加页脚
         message += "\n━━━━━━━━━━━━━━━━━━\n"
         message += f"📊 更新时间: {update_time}\n"
