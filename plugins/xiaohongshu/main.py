@@ -1,18 +1,17 @@
-import json
+import os
 import re
 import tomllib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union, Callable
 
-import os
-from ncatbot.core.message import GroupMessage, PrivateMessage
+from ncatbot.core.message import GroupMessage
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 
-from scheduler import scheduler
 from hotsearch.api.xiaohongshu import XiaohongshuClient
-from hotsearch.api.xiaohongshu import XiaohongshuHotSearch, XiaohongshuHotSearchItem
+from hotsearch.api.xiaohongshu import XiaohongshuHotSearchItem
+from scheduler import scheduler
 
 bot = CompatibleEnrollment
 
@@ -163,9 +162,6 @@ class XiaohongshuPlugin(BasePlugin):
     async def clean_old_files(self) -> None:
         """清理旧数据文件"""
         try:
-            # 当前时间戳
-            now = datetime.now()
-
             # 获取所有日期目录
             date_dirs = [d for d in self.data_dir.iterdir() if d.is_dir()]
 
@@ -183,7 +179,9 @@ class XiaohongshuPlugin(BasePlugin):
         except Exception as e:
             print(f"清理旧文件失败: {e}")
 
-    def get_hot_search_items(self, count: int = None) -> List[XiaohongshuHotSearchItem]:
+    def get_hot_search_items(
+        self, count: Optional[int] = None
+    ) -> List[XiaohongshuHotSearchItem]:
         """获取热搜条目列表"""
         if not self.xiaohongshu_client or not self.latest_data:
             return []
@@ -224,25 +222,37 @@ class XiaohongshuPlugin(BasePlugin):
 
         return self.xiaohongshu_client.search_items(keyword)
 
+    def get_timestamp_str(self) -> str:
+        """获取格式化的时间戳字符串"""
+        try:
+            if (
+                self.latest_data and self.latest_data.last_list_time > 946656000000
+            ):  # 2000-01-01 以后的时间戳才有效
+                # 确保时间戳有效（毫秒转秒）
+                timestamp_ms = self.latest_data.last_list_time
+                return datetime.fromtimestamp(timestamp_ms / 1000).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+        except Exception as e:
+            print(f"时间戳转换错误: {e}")
+
+        # 默认返回当前时间
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     def format_hot_list_message(
-        self, items: List[XiaohongshuHotSearchItem], count: int = None
+        self, items: List[XiaohongshuHotSearchItem], count: Optional[int] = None
     ) -> str:
         """格式化热榜消息"""
         if not items:
             return "❌ 获取小红书热榜失败，请稍后再试"
 
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if self.latest_data and hasattr(self.latest_data, "last_list_time"):
-            timestamp = datetime.fromtimestamp(
-                self.latest_data.last_list_time / 1000
-            ).strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = self.get_timestamp_str()
 
         # 限制条数
         if count and count > 0 and count < len(items):
             items = items[:count]
 
-        message = f"📖 小红书热榜 ({timestamp})\n\n共{len(items)}条热榜\n"
-        message += "━━━━━━━━━━━━━━━━━━\n\n"
+        message = f"📖 小红书热榜 ({timestamp})\n\n共{len(items)}条热榜\n━━━━━━━━━━━━━━━━━━\n\n"
 
         for i, item in enumerate(items):
             rank = i + 1
@@ -261,19 +271,17 @@ class XiaohongshuPlugin(BasePlugin):
                 prefix = f"{rank}. "
 
             # 标签
-            tag_str = f"[{tag_type}]" if tag_type and tag_type != "无" else ""
+            tag_str = f"[{tag_type}]" if tag_type and tag_type != "普通" else ""
 
-            message += f"{prefix}{title} {tag_str} 🔥 {view_num}\n\n"
+            message += (
+                f"{prefix}{title} {tag_str} 🔥 {view_num}\n🔗 链接: {item.www_url}\n"
+            )
 
             # 每三条添加分隔符
             if i < len(items) - 1 and (i + 1) % 3 == 0:
                 message += "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n"
 
-        message += "━━━━━━━━━━━━━━━━━━\n"
-        message += f"📊 更新时间: {timestamp}\n"
-        message += (
-            "💡 提示: 发送「小红书热榜 数字」可指定获取的条数，如「小红书热榜 20」"
-        )
+        message += f"━━━━━━━━━━━━━━━━━━\n📊 更新时间: {timestamp}\n💡 提示: 发送「小红书热榜 数字」或「🍠热榜 数字」可指定获取的条数"
 
         return message
 
@@ -282,32 +290,25 @@ class XiaohongshuPlugin(BasePlugin):
         if not items:
             return "❌ 获取小红书热门话题失败，请稍后再试"
 
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if self.latest_data and hasattr(self.latest_data, "last_list_time"):
-            timestamp = datetime.fromtimestamp(
-                self.latest_data.last_list_time / 1000
-            ).strftime("%Y-%m-%d %H:%M:%S")
-
-        message = f"🔍 小红书热门话题 ({timestamp})\n\n共{len(items)}条热门话题\n"
-        message += "━━━━━━━━━━━━━━━━━━\n\n"
+        timestamp = self.get_timestamp_str()
 
         # 获取热门项目
         hot_items = [item for item in items if item.is_hot]
+
+        message = f"🔍 小红书热门话题 ({timestamp})\n\n共{len(hot_items)}条热门话题\n━━━━━━━━━━━━━━━━━━\n\n"
 
         for i, item in enumerate(hot_items):
             rank = i + 1
             title = item.title
             view_num = item.view_num
 
-            message += f"{rank}. {title} 🔥 {view_num}\n\n"
+            message += f"{rank}. {title} 🔥 {view_num}\n🔗 链接: {item.www_url}\n"
 
             # 每三条添加分隔符
             if i < len(hot_items) - 1 and (i + 1) % 3 == 0:
                 message += "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n"
 
-        message += "━━━━━━━━━━━━━━━━━━\n"
-        message += f"📊 更新时间: {timestamp}\n"
-        message += "💡 提示: 发送「小红书笔记 关键词」可查询相关笔记详情"
+        message += f"━━━━━━━━━━━━━━━━━━\n📊 更新时间: {timestamp}\n💡 提示: 发送「小红书笔记 关键词」可查询相关笔记详情"
 
         return message
 
@@ -316,29 +317,22 @@ class XiaohongshuPlugin(BasePlugin):
         if not items:
             return "❌ 获取小红书新上榜热搜失败，请稍后再试"
 
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if self.latest_data and hasattr(self.latest_data, "last_list_time"):
-            timestamp = datetime.fromtimestamp(
-                self.latest_data.last_list_time / 1000
-            ).strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = self.get_timestamp_str()
 
-        message = f"🆕 小红书新上榜热搜 ({timestamp})\n\n共{len(items)}条新上榜\n"
-        message += "━━━━━━━━━━━━━━━━━━\n\n"
+        message = f"🆕 小红书新上榜热搜 ({timestamp})\n\n共{len(items)}条新上榜\n━━━━━━━━━━━━━━━━━━\n\n"
 
         for i, item in enumerate(items):
             rank = i + 1
             title = item.title
             view_num = item.view_num
 
-            message += f"{rank}. {title} 🔥 {view_num}\n\n"
+            message += f"{rank}. {title} 🔥 {view_num}\n🔗 链接: {item.www_url}\n"
 
             # 每三条添加分隔符
             if i < len(items) - 1 and (i + 1) % 3 == 0:
                 message += "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n"
 
-        message += "━━━━━━━━━━━━━━━━━━\n"
-        message += f"📊 更新时间: {timestamp}\n"
-        message += "💡 提示: 发送「小红书热榜」可查看完整热榜内容"
+        message += f"━━━━━━━━━━━━━━━━━━\n📊 更新时间: {timestamp}\n💡 提示: 发送「小红书热榜」或「🍠热榜」可查看完整热榜内容"
 
         return message
 
@@ -349,14 +343,9 @@ class XiaohongshuPlugin(BasePlugin):
         if not items:
             return f"❌ 没有找到包含「{keyword}」的小红书热搜"
 
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if self.latest_data and hasattr(self.latest_data, "last_list_time"):
-            timestamp = datetime.fromtimestamp(
-                self.latest_data.last_list_time / 1000
-            ).strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = self.get_timestamp_str()
 
-        message = f"🔍 小红书热搜 - 「{keyword}」搜索结果 ({timestamp})\n\n共找到{len(items)}条相关热搜\n"
-        message += "━━━━━━━━━━━━━━━━━━\n\n"
+        message = f"🔍 小红书热搜 - 「{keyword}」搜索结果 ({timestamp})\n\n共找到{len(items)}条相关热搜\n━━━━━━━━━━━━━━━━━━\n\n"
 
         for i, item in enumerate(items):
             rank = i + 1
@@ -365,40 +354,62 @@ class XiaohongshuPlugin(BasePlugin):
             tag_type = item.tag_type
 
             # 标签
-            tag_str = f"[{tag_type}]" if tag_type and tag_type != "无" else ""
+            tag_str = f"[{tag_type}]" if tag_type and tag_type != "普通" else ""
 
-            message += f"{rank}. {title} {tag_str} 🔥 {view_num}\n\n"
+            message += (
+                f"{rank}. {title} {tag_str} 🔥 {view_num}\n🔗 链接: {item.www_url}\n"
+            )
 
             # 每三条添加分隔符
             if i < len(items) - 1 and (i + 1) % 3 == 0:
                 message += "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n"
 
-        message += "━━━━━━━━━━━━━━━━━━\n"
-        message += f"📊 更新时间: {timestamp}\n"
-        message += "💡 提示: 发送「小红书热榜」可查看完整热榜内容"
+        message += f"━━━━━━━━━━━━━━━━━━\n📊 更新时间: {timestamp}\n💡 提示: 发送「小红书热榜」或「🍠热榜」可查看完整热榜内容"
 
         return message
 
     def parse_command(self, content: str) -> Tuple[str, Optional[str]]:
-        """解析命令
-        Return:
-            (命令类型, 参数)
-        """
+        """解析命令"""
         content = content.strip()
 
-        if re.match(r"^小红书热榜$", content):
+        # 简化的命令映射
+        if content in ["小红书热榜", "🍠热榜"]:
             return "hot_list", None
-        elif re.match(r"^小红书热榜\s+(\d+)$", content):
-            count = re.match(r"^小红书热榜\s+(\d+)$", content).group(1)
-            return "hot_list", count
-        elif re.match(r"^小红书热门$", content):
+        elif content == "小红书热门":
             return "hot_items", None
-        elif re.match(r"^小红书新上榜$", content):
+        elif content == "小红书新上榜":
             return "new_items", None
-        elif re.match(r"^小红书搜索\s+(.+)$", content):
-            keyword = re.match(r"^小红书搜索\s+(.+)$", content).group(1)
-            return "search", keyword
+
+        # 带参数的命令处理
+        hot_list_match = re.match(r"^(小红书热榜|🍠热榜)\s+(\d+)$", content)
+        if hot_list_match:
+            return "hot_list", hot_list_match.group(2)
+
+        search_match = re.match(r"^小红书搜索\s+(.+)$", content)
+        if search_match:
+            return "search", search_match.group(1)
+
         return "", None
+
+    async def handle_command(
+        self, cmd_type: str, param: Optional[str]
+    ) -> Union[str, None]:
+        """处理命令并返回回复消息"""
+        if cmd_type == "hot_list":
+            count = int(param) if param else None
+            items = self.get_hot_search_items(count)
+            return self.format_hot_list_message(items, count)
+        elif cmd_type == "hot_items":
+            items = self.get_hot_items()
+            return self.format_trending_message(items)
+        elif cmd_type == "new_items":
+            items = self.get_new_items()
+            return self.format_new_items_message(items)
+        elif cmd_type == "search":
+            keyword = param
+            items = self.search_items(keyword)
+            return self.format_search_results_message(keyword, items)
+        return None
 
     @bot.group_event()
     async def on_group_event(self, msg: GroupMessage):
@@ -417,56 +428,6 @@ class XiaohongshuPlugin(BasePlugin):
             return
 
         # 处理命令
-        if cmd_type == "hot_list":
-            count = int(param) if param else None
-            items = self.get_hot_search_items(count)
-            message = self.format_hot_list_message(items, count)
-            await msg.reply(text=message)
-        elif cmd_type == "hot_items":
-            items = self.get_hot_items()
-            message = self.format_trending_message(items)
-            await msg.reply(text=message)
-        elif cmd_type == "new_items":
-            items = self.get_new_items()
-            message = self.format_new_items_message(items)
-            await msg.reply(text=message)
-        elif cmd_type == "search":
-            keyword = param
-            items = self.search_items(keyword)
-            message = self.format_search_results_message(keyword, items)
-            await msg.reply(text=message)
-
-    @bot.private_event()
-    async def on_private_event(self, msg: PrivateMessage):
-        """处理私聊消息"""
-        content = msg.raw_message.strip()
-        user_id = msg.user_id
-
-        # 检查权限
-        if not self.is_user_authorized(user_id):
-            return
-
-        # 解析命令
-        cmd_type, param = self.parse_command(content)
-        if not cmd_type:
-            return
-
-        # 处理命令
-        if cmd_type == "hot_list":
-            count = int(param) if param else None
-            items = self.get_hot_search_items(count)
-            message = self.format_hot_list_message(items, count)
-            await msg.reply(text=message)
-        elif cmd_type == "hot_items":
-            items = self.get_hot_items()
-            message = self.format_trending_message(items)
-            await msg.reply(text=message)
-        elif cmd_type == "new_items":
-            items = self.get_new_items()
-            message = self.format_new_items_message(items)
-            await msg.reply(text=message)
-        elif cmd_type == "search":
-            keyword = param
-            items = self.search_items(keyword)
-            message = self.format_search_results_message(keyword, items)
-            await msg.reply(text=message)
+        reply_message = await self.handle_command(cmd_type, param)
+        if reply_message:
+            await msg.reply(text=reply_message)

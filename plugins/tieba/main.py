@@ -3,18 +3,18 @@
 
 import json
 import logging
-import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
 import tomli
-from ncatbot.core.message import GroupMessage, PrivateMessage
+from ncatbot.core.message import GroupMessage
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 
 # 从hotsearch.api导入BaiduTiebaClient替代rebang_core
 from hotsearch.api import BaiduTiebaClient
+from hotsearch.api.models.baidu_tieba import BaiduTiebaHotTopicItem, BaiduTiebaHotTopics
 from scheduler import scheduler
 
 # 配置日志
@@ -104,43 +104,18 @@ class TiebaDataCollector:
             data_dir=str(data_dir),
         )
 
-    def get_tieba_hot(self, sub_tab: str = "topic") -> Dict[str, Any]:
-        """获取百度贴吧热榜数据
-
-        Args:
-            sub_tab: 子分类，目前支持topic(话题)
-        """
+    def get_tieba_hot(self) -> BaiduTiebaHotTopics:
+        """获取百度贴吧热榜数据"""
         try:
             # 使用BaiduTiebaClient获取数据
             data = self.client.get_hot_topics()
-            if not data or not data.get("items"):
-                logger.error(f"获取百度贴吧热榜数据失败：数据为空，子分类：{sub_tab}")
-                return {}
-
-            # 添加时间戳和子分类信息
-            result = {
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "sub_tab": sub_tab,
-                "hot_items": [],
-            }
-
-            # 转换数据格式
-            items = data.get("items", [])
-            for item in items:
-                hot_item = {
-                    "title": item.get("name", ""),
-                    "description": item.get("desc", ""),
-                    "hot_value": str(item.get("discuss_num", "")),
-                    "is_highlighted": item.get("topic_tag", 0) > 0,
-                    "category": self._get_category_from_tag(item.get("topic_tag", 0)),
-                    "link": "",  # BaiduTiebaClient中没有提供链接
-                }
-                result["hot_items"].append(hot_item)
-
-            return result
+            if not data or not hasattr(data, "items"):
+                logger.error("获取百度贴吧热榜数据失败：数据为空")
+                return BaiduTiebaHotTopics([], 0, 0, 0, 0, 0)
+            return data
         except Exception as e:
-            logger.error(f"获取百度贴吧热榜数据失败: {e}，子分类：{sub_tab}")
-            return {}
+            logger.error(f"获取百度贴吧热榜数据失败: {e}")
+            return BaiduTiebaHotTopics([], 0, 0, 0, 0, 0)
 
     def _get_category_from_tag(self, tag: int) -> str:
         """根据话题标签获取分类"""
@@ -152,50 +127,13 @@ class TiebaDataCollector:
         }
         return category_map.get(tag, "")
 
-    def parse_hot_list(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """解析热榜数据
+    def collect_data(self) -> BaiduTiebaHotTopics:
+        """收集百度贴吧热榜数据并整合"""
+        return self.get_tieba_hot()
 
-        Args:
-            data: 原始数据
-        """
-        if not data or "hot_items" not in data:
-            return []
-
-        hot_items = data.get("hot_items", [])
-        return hot_items
-
-    def collect_data(self, sub_tab: str = "topic") -> Dict[str, Any]:
-        """收集百度贴吧热榜数据并整合
-
-        Args:
-            sub_tab: 子分类
-        """
-        now = datetime.now()
-        timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
-
-        hot_data = self.get_tieba_hot(sub_tab)
-        if not hot_data:
-            return {}
-
-        # 保持原有数据结构，添加统一的时间戳
-        hot_data["timestamp"] = timestamp
-        hot_data["metadata"] = {
-            "source": "baidu-tieba",
-            "sub_tab": sub_tab,
-            "hot_count": len(hot_data.get("hot_items", [])),
-            "update_time": timestamp,
-        }
-
-        return hot_data
-
-    def save_data(self, data: Dict[str, Any], sub_tab: str = "topic") -> str:
-        """保存数据到JSON文件，使用年月日-小时的文件夹格式
-
-        Args:
-            data: 热榜数据
-            sub_tab: 子分类
-        """
-        if not data:
+    def save_data(self, data: BaiduTiebaHotTopics) -> str:
+        """保存数据到JSON文件，使用年月日-小时的文件夹格式"""
+        if not data or not data.items:
             return ""
 
         now = datetime.now()
@@ -204,11 +142,22 @@ class TiebaDataCollector:
         date_dir.mkdir(exist_ok=True, parents=True)
 
         timestamp = now.strftime("%Y%m%d%H%M%S")
-        filename = f"tieba_{sub_tab}_{timestamp}.json"
+        filename = f"tieba_hot_{timestamp}.json"
         filepath = date_dir / filename
 
+        # 转换为JSON可序列化的字典
+        result = {
+            "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "items": [vars(item) for item in data.items],
+            "last_list_time": data.last_list_time,
+            "next_refresh_time": data.next_refresh_time,
+            "version": data.version,
+            "current_page": data.current_page,
+            "total_page": data.total_page,
+        }
+
         with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+            json.dump(result, f, ensure_ascii=False, indent=2)
 
         return str(filepath)
 
@@ -299,101 +248,106 @@ class TiebaPlugin(BasePlugin):
             # 检查配置更新
             self.check_config_update()
 
-            # 获取所有子分类
-            sub_tabs = ["topic"]  # 目前只有topic一种
-
-            # 为每个子分类收集数据
-            for sub_tab in sub_tabs:
-                data = self.data_collector.collect_data(sub_tab)
-                if data and data.get("hot_items"):
-                    # 保存数据到文件
-                    data_file = self.data_collector.save_data(data, sub_tab)
-                    if data_file:
-                        self.latest_data_file = data_file
-                        logger.info(
-                            f"成功获取并保存百度贴吧热榜数据: {data_file}, 子分类: {sub_tab}"
-                        )
-                else:
-                    logger.warning(
-                        f"获取百度贴吧热榜数据失败或数据为空, 子分类: {sub_tab}"
-                    )
+            # 获取数据
+            hot_topics = self.data_collector.collect_data()
+            if hot_topics and hot_topics.items:
+                # 保存数据到文件
+                data_file = self.data_collector.save_data(hot_topics)
+                if data_file:
+                    self.latest_data_file = data_file
+                    logger.info(f"成功获取并保存百度贴吧热榜数据: {data_file}")
+            else:
+                logger.warning("获取百度贴吧热榜数据失败或数据为空")
 
             # 清理旧文件
             await self.clean_old_files()
         except Exception as e:
             logger.error(f"获取百度贴吧热榜数据出错: {e}")
 
-    def get_latest_hot_list(
-        self, count: int = None, sub_tab: str = "topic"
-    ) -> Dict[str, Any]:
+    def get_latest_hot_topics(self, count: int = None) -> BaiduTiebaHotTopics:
         """获取最新的热榜数据
 
         Args:
             count: 获取的条目数量
-            sub_tab: 子分类
 
         Returns:
             热榜数据
         """
-        # 查找最新的指定子分类数据文件
-        latest_file = None
-        if sub_tab != "topic" or not self.latest_data_file:
-            # 查找最新的数据文件
+        # 查找最新的数据文件
+        latest_file = self.latest_data_file
+        if not latest_file:
             try:
                 for date_dir in sorted(self.data_dir.glob("20*"), reverse=True):
                     if date_dir.is_dir():
-                        files = list(date_dir.glob(f"tieba_{sub_tab}_*.json"))
+                        files = list(date_dir.glob("tieba_hot_*.json"))
                         if files:
                             files.sort(key=lambda x: x.name, reverse=True)
                             latest_file = str(files[0])
                             break
             except Exception as e:
-                logger.error(f"查找最新子分类数据文件失败: {e}")
-        else:
-            latest_file = self.latest_data_file
+                logger.error(f"查找最新数据文件失败: {e}")
 
         # 如果找不到数据文件，尝试获取最新数据
         if not latest_file:
-            hot_data = self.data_collector.collect_data(sub_tab)
-            if hot_data:
-                filepath = self.data_collector.save_data(hot_data, sub_tab)
+            hot_topics = self.data_collector.collect_data()
+            if hot_topics and hot_topics.items:
+                filepath = self.data_collector.save_data(hot_topics)
                 if filepath:
-                    latest_file = filepath
-                    if sub_tab == "topic":
-                        self.latest_data_file = filepath
-            return hot_data
+                    self.latest_data_file = filepath
+            return hot_topics
 
         try:
             with open(latest_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             # 验证数据有效性
-            if data and "hot_items" in data:
+            if data and "items" in data:
                 # 如果数据超过30分钟，尝试更新
                 timestamp = data.get("timestamp", "")
                 if timestamp:
                     data_time = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
                     now = datetime.now()
                     if (now - data_time).total_seconds() > 1800:  # 30分钟
-                        logger.info(f"缓存数据超过30分钟，尝试更新, 子分类: {sub_tab}")
-                        fresh_data = self.data_collector.collect_data(sub_tab)
-                        if fresh_data:
-                            data = fresh_data
-                            filepath = self.data_collector.save_data(data, sub_tab)
-                            if filepath and sub_tab == "topic":
+                        logger.info("缓存数据超过30分钟，尝试更新")
+                        fresh_data = self.data_collector.collect_data()
+                        if fresh_data and fresh_data.items:
+                            data = {
+                                "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+                                "items": [vars(item) for item in fresh_data.items],
+                                "last_list_time": fresh_data.last_list_time,
+                                "next_refresh_time": fresh_data.next_refresh_time,
+                                "version": fresh_data.version,
+                                "current_page": fresh_data.current_page,
+                                "total_page": fresh_data.total_page,
+                            }
+                            filepath = self.data_collector.save_data(fresh_data)
+                            if filepath:
                                 self.latest_data_file = filepath
+
+                # 转换为BaiduTiebaHotTopics对象
+                items = [
+                    BaiduTiebaHotTopicItem.from_dict(item)
+                    for item in data.get("items", [])
+                ]
 
                 # 限制数量
                 if count is not None and count > 0:
-                    data["hot_items"] = data.get("hot_items", [])[:count]
+                    items = items[:count]
 
-                return data
+                return BaiduTiebaHotTopics(
+                    items=items,
+                    last_list_time=data.get("last_list_time", 0),
+                    next_refresh_time=data.get("next_refresh_time", 0),
+                    version=data.get("version", 0),
+                    current_page=data.get("current_page", 0),
+                    total_page=data.get("total_page", 0),
+                )
             else:
-                logger.warning(f"缓存数据无效，尝试获取新数据, 子分类: {sub_tab}")
-                return self.data_collector.collect_data(sub_tab)
+                logger.warning("缓存数据无效，尝试获取新数据")
+                return self.data_collector.collect_data()
         except Exception as e:
-            logger.error(f"读取最新热榜数据出错: {e}, 子分类: {sub_tab}")
-            return self.data_collector.collect_data(sub_tab)
+            logger.error(f"读取最新热榜数据出错: {e}")
+            return self.data_collector.collect_data()
 
     async def clean_old_files(self) -> None:
         """清理旧数据文件"""
@@ -433,31 +387,27 @@ class TiebaPlugin(BasePlugin):
             logger.error(f"清理旧文件出错: {e}")
 
     def format_hot_list_message(
-        self,
-        hot_data: Dict[str, Any],
-        count: int = None,
-        show_detail: bool = False,
-        sub_tab: str = "topic",
+            self,
+            hot_topics: BaiduTiebaHotTopics,
+            count: int = None,
+            show_detail: bool = False,
     ) -> str:
         """格式化热榜消息
 
         Args:
-            hot_data: 热榜数据
+            hot_topics: 热榜数据
             count: 显示条目数量
             show_detail: 是否显示详情
-            sub_tab: 子分类
 
         Returns:
             格式化后的消息
         """
-        if not hot_data or not hot_data.get("hot_items"):
-            return f"⚠️ 暂无百度贴吧{self.get_sub_tab_display_name(sub_tab)}数据，请稍后再试"
+        if not hot_topics or not hot_topics.items:
+            return "⚠️ 暂无百度贴吧热榜数据，请稍后再试"
 
-        # 获取时间和热榜条目
-        update_time = hot_data.get(
-            "timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        )
-        hot_items = hot_data.get("hot_items", [])
+        now = datetime.now()
+        update_time = now.strftime("%Y-%m-%d %H:%M:%S")
+        hot_items = hot_topics.items
 
         # 限制条目数量
         if count is None:
@@ -465,22 +415,18 @@ class TiebaPlugin(BasePlugin):
         hot_items = hot_items[:count]
 
         # 构建消息
-        sub_tab_name = self.get_sub_tab_display_name(sub_tab)
-        message = f"📱 {self.config.templates['header'].replace('热榜', f'{sub_tab_name}榜').format(time=update_time)}"
+        message = f"📱 {self.config.templates['header'].format(time=update_time)}"
 
         # 添加数据统计
-        total_items = len(hot_data.get("hot_items", []))
-        highlighted_count = sum(
-            1
-            for item in hot_data.get("hot_items", [])
-            if item.get("is_highlighted", False)
-        )
-        message += f"共{total_items}条热门帖子，{highlighted_count}条精华内容\n"
+        total_items = len(hot_topics.items)
+        highlighted_count = sum(1 for item in hot_topics.items if item.topic_tag > 0)
+        message += f"共{total_items}条热门帖子，{highlighted_count}条热门内容\n"
         message += "━━━━━━━━━━━━━━━━━━\n\n"
 
         # 添加热榜条目
         for idx, item in enumerate(hot_items, start=1):
-            title = item.get("title", "无标题")
+            title = item.name
+            topic_id = item.id
 
             # 构建排名前缀（前三名使用特殊emoji）
             if idx == 1:
@@ -493,39 +439,32 @@ class TiebaPlugin(BasePlugin):
                 rank_prefix = f"{idx}. "
 
             # 设置高亮标记
-            highlight = "💎 " if item.get("is_highlighted", False) else ""
+            highlight = ""
+            if item.topic_tag > 0:
+                category = self._get_category_from_tag(item.topic_tag)
+                if category:
+                    emoji = self.config.category_emoji.get(category, "")
+                    if emoji:
+                        highlight = f"{emoji} "
 
-            # 设置热度标签
+            # 设置热度值
+            hot_value = item.discuss_num
             hot_tag = ""
-            category = item.get("category", "")
-            if category:
-                emoji = self.config.category_emoji.get(category, "")
-                if emoji:
-                    hot_tag = f" {emoji}"
-
-            # 获取热度值
-            hot_value = item.get("hot_value", "")
             if hot_value:
-                try:
-                    hot_num = float(hot_value)
-                    if hot_num >= 10000:
-                        hot_value = f"{hot_num / 10000:.1f}万"
-                except:
-                    pass
-                hot_tag += f" 🔥{hot_value}"
+                if hot_value >= 10000:
+                    hot_tag = f" 🔥{hot_value / 10000:.1f}万"
+                else:
+                    hot_tag = f" 🔥{hot_value}"
+
+            # 添加ID信息，方便用户查询详情
+            id_info = f" [ID:{topic_id}]" if topic_id else ""
 
             # 格式化单个条目
-            message += f"{rank_prefix}{highlight}{title}{hot_tag}\n"
+            message += f"{rank_prefix}{highlight}{title}{id_info}{hot_tag}\n"
 
             # 添加详情
-            if show_detail and item.get("description"):
-                description = item.get("description", "")
-                message += f"   {description}\n"
-
-            # 添加链接
-            if show_detail and item.get("link"):
-                link = item.get("link", "")
-                message += f"   🔗 {link}\n"
+            if show_detail and item.desc:
+                message += f"   📝 {item.desc}\n"
 
             # 添加分隔符，每三个条目添加一次
             if idx % 3 == 0 and idx < len(hot_items):
@@ -534,16 +473,86 @@ class TiebaPlugin(BasePlugin):
         # 添加页脚
         message += "\n━━━━━━━━━━━━━━━━━━\n"
         message += f"📊 更新时间: {update_time}\n"
-        message += self.config.templates["footer"].replace(
-            "贴吧热榜", f"贴吧{sub_tab_name}榜"
-        )
+        message += "💡 使用提示：\n"
+        message += "• 发送「贴吧热榜」查看贴吧热榜\n"
+        message += "• 发送「贴吧热榜 15」指定显示15条\n"
+        message += "• 发送「贴吧热榜详情」查看带描述的热榜\n"
+        message += "• 发送「贴吧热榜ID 123456」查看指定话题详情\n"
 
         return message
 
-    def get_sub_tab_display_name(self, sub_tab: str) -> str:
-        """获取子分类的显示名称"""
-        sub_tab_names = {"topic": "话题"}
-        return sub_tab_names.get(sub_tab, "热榜")
+    def _get_category_from_tag(self, tag: int) -> str:
+        """根据话题标签获取分类"""
+        category_map = {
+            0: "",  # 普通
+            1: "热",  # 热点
+            2: "爆",  # 重大
+            3: "新",  # 体育
+        }
+        return category_map.get(tag, "")
+
+    def format_topic_detail(
+            self, topic_id: str, hot_topics: BaiduTiebaHotTopics
+    ) -> str:
+        """格式化话题详情信息
+
+        Args:
+            topic_id: 话题ID
+            hot_topics: 热榜数据
+
+        Returns:
+            格式化后的话题详情
+        """
+        if not hot_topics or not hot_topics.items:
+            return f"⚠️ 未找到ID为 {topic_id} 的话题，请检查ID是否正确"
+
+        # 查找指定ID的话题
+        topic_item = None
+        for item in hot_topics.items:
+            if item.id == topic_id:
+                topic_item = item
+                break
+
+        if not topic_item:
+            return f"⚠️ 未找到ID为 {topic_id} 的话题，请检查ID是否正确"
+
+        # 获取话题信息
+        title = topic_item.name
+        desc = topic_item.desc
+        hot_value = topic_item.discuss_num
+        tag = topic_item.topic_tag
+        category = self._get_category_from_tag(tag)
+
+        # 美化热度值显示
+        hot_display = f"{hot_value:,}"
+        if hot_value >= 10000:
+            hot_display = f"{hot_value / 10000:.1f}万"
+
+        # 获取分类对应的emoji
+        category_emoji = ""
+        if category:
+            category_emoji = self.config.category_emoji.get(category, "")
+
+        # 构建详情消息
+        message = f"📋 贴吧话题详情 [ID:{topic_id}]\n"
+        message += "━━━━━━━━━━━━━━━━━━\n\n"
+
+        # 添加标题和分类
+        message += f"📌 话题：{title}\n"
+
+        # 添加分类和热度
+        if category:
+            message += f"🏷️ 分类：{category} {category_emoji}\n"
+        message += f"🔥 热度：{hot_display} 讨论\n"
+
+        # 添加详细描述
+        message += f"\n📝 详情描述：\n{desc}\n"
+
+        # 添加更新时间
+        update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        message += f"\n🕒 更新时间：{update_time}\n"
+
+        return message
 
     @bot.group_event()
     async def on_group_event(self, msg: GroupMessage):
@@ -554,98 +563,52 @@ class TiebaPlugin(BasePlugin):
 
         content = msg.raw_message.strip()
 
-        # 基本命令: 贴吧热榜
-        if content == "贴吧热榜" or content.startswith("贴吧热榜 "):
-            await self.handle_tieba_request(msg, "topic", content)
-        # 子分类命令: 贴吧话题榜
-        elif content == "贴吧话题榜" or content.startswith("贴吧话题榜 "):
-            await self.handle_tieba_request(msg, "topic", content)
+        # 命令处理逻辑
+        if content == "贴吧热榜":
+            # 基本热榜查询
+            await self.handle_tieba_hot_list(msg)
+        elif content.startswith("贴吧热榜 "):
+            # 带参数的热榜查询
+            param = content.split(" ", 1)[1].strip()
+            try:
+                count = int(param)
+                await self.handle_tieba_hot_list(msg, count=count)
+            except ValueError:
+                await msg.reply(text="🤔 请输入正确的数字，如「贴吧热榜 15」")
+        elif content == "贴吧热榜详情":
+            # 详情热榜查询
+            await self.handle_tieba_hot_list(msg, show_detail=True)
+        elif content.startswith("贴吧热榜ID "):
+            # 按ID查询话题详情
+            topic_id = content.split(" ", 1)[1].strip()
+            await self.handle_topic_detail(msg, topic_id)
+        elif content.startswith("贴吧热榜查询 "):
+            # 兼容旧命令，按ID查询话题详情
+            topic_id = content.split(" ", 1)[1].strip()
+            await self.handle_topic_detail(msg, topic_id)
 
-    async def handle_tieba_request(self, msg: GroupMessage, sub_tab: str, content: str):
-        """处理贴吧请求"""
-        try:
-            # 提取请求的条数
-            count = self.config.max_items
-            show_detail = False
-
-            if " " in content:
-                parts = content.split(" ", 1)
-                param = parts[1].strip()
-
-                # 检查是否包含详情标记
-                if "详情" in param or "detail" in param.lower():
-                    show_detail = True
-                    param = param.replace("详情", "").replace("detail", "").strip()
-
-                # 提取数字
-                try:
-                    if param and param.isdigit():
-                        count = int(param)
-                        # 限制最大条目数为50
-                        count = min(max(1, count), 50)
-                except:
-                    pass  # 如果解析失败，使用默认值
-
-            hot_data = self.get_latest_hot_list(count, sub_tab)
-            response = self.format_hot_list_message(
-                hot_data, count, show_detail, sub_tab
-            )
-            await msg.reply(text=response)
-        except Exception as e:
-            logger.error(f"处理贴吧热榜命令出错: {e}, 子分类: {sub_tab}")
-            await msg.reply(text=f"处理命令时出现错误: {str(e)}")
-
-    @bot.private_event()
-    async def on_private_event(self, msg: PrivateMessage):
-        """处理私聊消息"""
-        # 检查用户权限
-        if not self.is_user_authorized(msg.sender.user_id):
-            return
-
-        content = msg.raw_message.strip()
-
-        # 基本命令: 贴吧热榜
-        if content == "贴吧热榜" or content.startswith("贴吧热榜 "):
-            await self.handle_tieba_request_private(msg, "topic", content)
-        # 子分类命令: 贴吧话题榜
-        elif content == "贴吧话题榜" or content.startswith("贴吧话题榜 "):
-            await self.handle_tieba_request_private(msg, "topic", content)
-
-    async def handle_tieba_request_private(
-        self, msg: PrivateMessage, sub_tab: str, content: str
+    async def handle_tieba_hot_list(
+            self, msg: GroupMessage, count: int = None, show_detail: bool = False
     ):
-        """处理私聊贴吧请求"""
+        """处理贴吧热榜请求"""
         try:
-            # 提取请求的条数
-            count = self.config.max_items
-            show_detail = False
-
-            if " " in content:
-                parts = content.split(" ", 1)
-                param = parts[1].strip()
-
-                # 检查是否包含详情标记
-                if "详情" in param or "detail" in param.lower():
-                    show_detail = True
-                    param = param.replace("详情", "").replace("detail", "").strip()
-
-                # 提取数字
-                try:
-                    if param and param.isdigit():
-                        count = int(param)
-                        # 限制最大条目数为50
-                        count = min(max(1, count), 50)
-                except:
-                    pass  # 如果解析失败，使用默认值
-
-            hot_data = self.get_latest_hot_list(count, sub_tab)
-            response = self.format_hot_list_message(
-                hot_data, count, show_detail, sub_tab
-            )
+            hot_topics = self.get_latest_hot_topics(count)
+            response = self.format_hot_list_message(hot_topics, count, show_detail)
             await msg.reply(text=response)
         except Exception as e:
-            logger.error(f"处理贴吧热榜命令出错: {e}, 子分类: {sub_tab}")
-            await msg.reply(text=f"处理命令时出现错误: {str(e)}")
+            logger.error(f"处理贴吧热榜命令出错: {e}")
+            await msg.reply(text=f"❌ 处理命令时出现错误: {str(e)}")
+
+    async def handle_topic_detail(self, msg: GroupMessage, topic_id: str):
+        """处理话题详情查询请求"""
+        try:
+            # 获取完整热榜数据
+            hot_topics = self.get_latest_hot_topics(None)
+            response = self.format_topic_detail(topic_id, hot_topics)
+            await msg.reply(text=response)
+        except Exception as e:
+            logger.error(f"处理话题详情查询出错: {e}")
+            await msg.reply(text=f"❌ 处理命令时出现错误: {str(e)}")
 
     async def on_exit(self) -> None:
         """插件卸载时的清理操作"""
