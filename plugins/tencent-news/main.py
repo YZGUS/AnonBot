@@ -1,21 +1,17 @@
-import json
 import re
 import tomllib
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 
-import requests
-from ncatbot.core.message import GroupMessage, PrivateMessage
+from ncatbot.core.message import GroupMessage
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 
-from scheduler import scheduler
 from hotsearch.api import TencentNewsClient
 from hotsearch.api.models.tencent_news import (
     TencentNewsHotSearchItem,
-    TencentNewsHotSearchResponse,
 )
+from scheduler import scheduler
 
 bot = CompatibleEnrollment
 
@@ -206,56 +202,46 @@ class TencentNewsPlugin(BasePlugin):
             return []
 
     def format_hot_list_message(
-        self, items: List[TencentNewsHotSearchItem], count: int = None
+            self, items: List[TencentNewsHotSearchItem], count: int = None
     ) -> str:
         """格式化热榜消息"""
         if not items:
-            return "❌ 获取腾讯新闻热榜失败，请稍后再试"
+            return "暂无热榜数据"
 
-        # 限制条数
-        if count and count > 0:
+        if count is not None and count > 0:
             items = items[:count]
 
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        message = f"📰 腾讯新闻热榜 ({timestamp})\n\n共{len(items)}条热榜\n"
-        message += "━━━━━━━━━━━━━━━━━━\n\n"
+        message = "📰 腾讯新闻热榜 Top{}\n".format(len(items))
+        message += "====================\n"
 
-        for i, item in enumerate(items):
-            # 前三名使用特殊标记
-            if i == 0:
-                prefix = "🥇 "
-            elif i == 1:
-                prefix = "🥈 "
-            elif i == 2:
-                prefix = "🥉 "
-            else:
-                prefix = f"{i+1}. "
+        for index, item in enumerate(items):
+            message += "{}. {}\n".format(index + 1, item.title)
 
-            # 格式化热度值
-            hot_str = ""
+            # 添加热度信息（如果有）
             if item.hot_score:
-                if item.hot_score >= 10000:
-                    hot_str = f"🔥 {item.hot_score // 10000}万热度"
-                else:
-                    hot_str = f"🔥 {item.hot_score}热度"
+                message += "   🔥 热度: {}\n".format(item.hot_score)
 
-            # 标题
-            title = item.title
+            # 添加摘要信息（如果有）
+            if item.desc:
+                # 限制摘要长度，避免消息过长
+                short_desc = (
+                    item.desc[:60] + "..." if len(item.desc) > 60 else item.desc
+                )
+                message += "   📝 {}\n".format(short_desc)
 
-            message += f"{prefix}{title} {hot_str}\n\n"
+            # 添加链接
+            message += "   🔗 链接: {}\n".format(item.www_url)
 
-            # 每三条添加分隔符
-            if i < len(items) - 1 and (i + 1) % 3 == 0:
-                message += "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n"
+            # 添加分隔线
+            if index < len(items) - 1:
+                message += "--------------------\n"
 
-        message += "━━━━━━━━━━━━━━━━━━\n"
-        message += f"📊 更新时间: {timestamp}\n"
-        message += "💡 提示: 发送「腾讯热榜 数字」可指定获取的条数，如「腾讯热榜 20」"
-
+        message += "====================\n"
+        message += "💡 回复「腾讯热榜详情 序号」查看完整内容，如：腾讯热榜详情 1"
         return message
 
     def format_news_detail_message(
-        self, items: List[TencentNewsHotSearchItem], keyword: str
+            self, items: List[TencentNewsHotSearchItem], keyword: str
     ) -> str:
         """格式化新闻详情消息"""
         if not items:
@@ -266,7 +252,7 @@ class TencentNewsPlugin(BasePlugin):
 
         # 最多显示5条相关新闻
         for i, item in enumerate(items[:5]):
-            message += f"{i+1}. {item.title}\n"
+            message += f"{i + 1}. {item.title}\n"
             if item.hot_score:
                 message += f"   🔥 热度: {item.hot_score}\n"
             if item.www_url:
@@ -280,73 +266,134 @@ class TencentNewsPlugin(BasePlugin):
 
         return message
 
-    def parse_command(self, content: str) -> Tuple[str, Optional[str]]:
-        """解析命令
-        Return:
-            (命令类型, 参数)
-        """
-        content = content.strip()
-
-        if re.match(r"^腾讯热榜$", content):
-            return "hot_list", None
-        elif re.match(r"^腾讯热榜\s+(\d+)$", content):
-            count = re.match(r"^腾讯热榜\s+(\d+)$", content).group(1)
-            return "hot_list", count
-        elif re.match(r"^腾讯新闻\s+(.+)$", content):
-            keyword = re.match(r"^腾讯新闻\s+(.+)$", content).group(1)
-            return "news_detail", keyword
-        else:
-            return "", None
-
     @bot.group_event()
     async def on_group_event(self, msg: GroupMessage):
-        """处理群聊消息"""
+        """处理群组消息"""
         content = msg.raw_message.strip()
-        user_id = msg.user_id
         group_id = msg.group_id
+        user_id = msg.user_id
 
-        # 检查权限
+        # 检查用户授权
         if not self.is_user_authorized(user_id, group_id):
             return
 
-        # 解析命令
-        cmd_type, param = self.parse_command(content)
-        if not cmd_type:
+        # 刷新配置
+        if self.check_config_update():
+            self.load_config()
+
+        # 腾讯热榜命令处理
+        if content.startswith("腾讯热榜"):
+            # 检查是否请求简约版
+            if "简约版" in content:
+                count_match = re.search(r"腾讯热榜简约版\s*(\d+)", content)
+                count = int(count_match.group(1)) if count_match else 10
+                await self.send_hot_list_simple(msg, count)
+                return
+
+            # 检查是否请求详情版
+            if "详情版" in content:
+                count_match = re.search(r"腾讯热榜详情版\s*(\d+)", content)
+                count = int(count_match.group(1)) if count_match else 10
+                await self.send_hot_list_detail(msg, count)
+                return
+
+            # 按序号查询新闻详情
+            num_match = re.search(r"腾讯热榜详情\s*(\d+)", content)
+            if num_match:
+                index = int(num_match.group(1))
+                await self.send_news_by_index(msg, index)
+                return
+
+            # 处理常规热榜请求
+            count_match = re.search(r"腾讯热榜\s*(\d+)", content)
+            count = int(count_match.group(1)) if count_match else 10
+            await self.send_hot_list_detail(msg, count)
             return
 
-        # 处理命令
-        if cmd_type == "hot_list":
-            count = int(param) if param else None
-            hot_items = self.get_latest_hot_list(count)
-            message = self.format_hot_list_message(hot_items, count)
-            await msg.reply(text=message)
-        elif cmd_type == "news_detail":
-            news_items = self.search_news(param)
-            message = self.format_news_detail_message(news_items, param)
-            await msg.reply(text=message)
-
-    @bot.private_event()
-    async def on_private_event(self, msg: PrivateMessage):
-        """处理私聊消息"""
-        content = msg.raw_message.strip()
-        user_id = msg.user_id
-
-        # 检查权限
-        if not self.is_user_authorized(user_id):
+        # 关键词搜索新闻
+        if content.startswith("腾讯新闻"):
+            keyword = content[5:].strip()
+            if keyword:
+                await self.send_news_search(msg, keyword)
             return
 
-        # 解析命令
-        cmd_type, param = self.parse_command(content)
-        if not cmd_type:
+    async def send_hot_list_simple(self, msg, count: int = 10):
+        """发送简约版热榜"""
+        hot_list = self.get_latest_hot_list(count)
+        if not hot_list:
+            await msg.reply(text="获取热榜数据失败，请稍后再试")
             return
 
-        # 处理命令
-        if cmd_type == "hot_list":
-            count = int(param) if param else None
-            hot_items = self.get_latest_hot_list(count)
-            message = self.format_hot_list_message(hot_items, count)
-            await msg.reply(text=message)
-        elif cmd_type == "news_detail":
-            news_items = self.search_news(param)
-            message = self.format_news_detail_message(news_items, param)
-            await msg.reply(text=message)
+        # 简约版只展示序号和标题
+        message = "📰 腾讯新闻热榜简约版 Top{}\n".format(len(hot_list))
+        message += "====================\n"
+
+        for index, item in enumerate(hot_list):
+            message += "{}. {}\n".format(index + 1, item.title)
+
+        message += "====================\n"
+        message += "💡 回复「腾讯热榜详情 序号」查看详情，如：腾讯热榜详情 1"
+
+        await msg.reply(text=message)
+
+    async def send_hot_list_detail(self, msg, count: int = 10):
+        """发送详情版热榜"""
+        hot_list = self.get_latest_hot_list(count)
+        if not hot_list:
+            await msg.reply(text="获取热榜数据失败，请稍后再试")
+            return
+
+        message = self.format_hot_list_message(hot_list, count)
+        await msg.reply(text=message)
+
+    async def send_news_by_index(self, msg, index: int):
+        """根据序号发送新闻详情"""
+        # 获取热榜数据
+        hot_list = self.get_latest_hot_list()
+        if not hot_list:
+            await msg.reply(text="获取热榜数据失败，请稍后再试")
+            return
+
+        # 检查序号是否有效
+        if index < 1 or index > len(hot_list):
+            await msg.reply(
+                text=f"序号 {index} 超出范围，当前热榜共有 {len(hot_list)} 条新闻"
+            )
+            return
+
+        # 获取指定序号的新闻
+        news_item = hot_list[index - 1]
+        message = self.format_news_item_detail(news_item)
+        await msg.reply(text=message)
+
+    def format_news_item_detail(self, item: TencentNewsHotSearchItem) -> str:
+        """格式化单条新闻详情"""
+        message = "📰 新闻详情\n"
+        message += "====================\n"
+        message += f"🔖 标题：{item.title}\n"
+        message += f"🔗 链接：{item.www_url}\n"
+
+        if item.hot_score:
+            message += f"🔥 热度：{item.hot_score}\n"
+
+        if item.desc:
+            message += f"\n📝 摘要：{item.desc}\n"
+
+        if item.comment_num:
+            message += f"💬 评论数：{item.comment_num}\n"
+
+        if item.like_num:
+            message += f"👍 点赞数：{item.like_num}\n"
+
+        message += "===================="
+        return message
+
+    async def send_news_search(self, msg, keyword: str):
+        """搜索并发送新闻"""
+        search_results = self.search_news(keyword)
+        if not search_results:
+            await msg.reply(text=f"未找到与'{keyword}'相关的新闻")
+            return
+
+        message = self.format_news_detail_message(search_results, keyword)
+        await msg.reply(text=message)
