@@ -5,12 +5,12 @@ import tomllib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 
-from hotsearch.api import NetEaseNewsClient
-from ncatbot.core.message import GroupMessage, PrivateMessage
+from ncatbot.core.message import GroupMessage
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 
+from hotsearch.api import NetEaseNewsClient
 from scheduler import scheduler
 
 # 创建logger
@@ -53,12 +53,12 @@ class NetEaseNewsDataCollector:
     """网易新闻数据收集器"""
 
     def __init__(
-            self,
-            data_dir: Path,
-            hot_count: int = 50,
-            hot_topic_count: int = 10,
-            comment_count: int = 10,
-            api_token: str = None,
+        self,
+        data_dir: Path,
+        hot_count: int = 50,
+        hot_topic_count: int = 10,
+        comment_count: int = 10,
+        api_token: str = None,
     ):
         """初始化数据收集器
 
@@ -163,10 +163,11 @@ class NetEaseNewsDataCollector:
                     "publish_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "url": item.www_url,
                     "hot_score": item.hot_score,
+                    "reply_count": item.reply_count,
                     "comments": [
                         {
                             "content": item.hot_comment
-                                       or f"评论内容 {i + 1} 关于{keyword}",
+                            or f"评论内容 {i + 1} 关于{keyword}",
                             "user": f"网易用户_{i + 1}",
                             "likes": (
                                 (item.reply_count or 0) // (i + 1)
@@ -186,6 +187,7 @@ class NetEaseNewsDataCollector:
                     "source": "网易新闻",
                     "publish_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "url": f"https://news.163.com/search?q={keyword}",
+                    "reply_count": 0,
                     "comments": [
                         {
                             "content": f"评论内容 {i + 1} 关于{keyword}",
@@ -426,10 +428,10 @@ class NetEaseNewsPlugin(BasePlugin):
 
         return self.data_collector.get_news_detail(keyword)
 
-    def format_hot_list_message(
-            self, hot_data: Dict[str, Any], count: int = None
+    def format_hot_list_simple(
+        self, hot_data: Dict[str, Any], count: int = None
     ) -> str:
-        """格式化热榜消息"""
+        """格式化简约版热榜消息"""
         if not hot_data:
             return "❌ 获取网易新闻热榜失败，请稍后再试"
 
@@ -445,47 +447,103 @@ class NetEaseNewsPlugin(BasePlugin):
         if count and count > 0:
             hot_list = hot_list[:count]
 
-        message = f"📰 网易新闻热榜 ({timestamp})\n\n共{len(hot_list)}条热榜\n"
-        message += "━━━━━━━━━━━━━━━━━━\n\n"
+        message = f"📰 网易新闻热榜简约版 ({timestamp})\n\n"
 
-        for i, item in enumerate(hot_list):
-            rank = item.get("rank", i + 1)
+        for item in hot_list:
+            rank = item.get("rank", 0)
+            title = item.get("title", "未知标题")
+            message += f"{rank}. {title}\n"
+
+        message += "\n💡 提示: 发送「网易热榜详情」查看详细版本，发送「网易详情 ID」查看指定新闻"
+        return message
+
+    def format_hot_list_detail(
+        self, hot_data: Dict[str, Any], count: int = None
+    ) -> str:
+        """格式化详情版热榜消息"""
+        if not hot_data:
+            return "❌ 获取网易新闻热榜失败，请稍后再试"
+
+        hot_list = hot_data.get("hot_list", [])
+        timestamp = hot_data.get(
+            "timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
+
+        if not hot_list:
+            return "❌ 网易新闻热榜数据为空"
+
+        # 限制条数
+        if count and count > 0:
+            hot_list = hot_list[:count]
+
+        message = f"📰 网易新闻热榜详情版 ({timestamp})\n"
+        message += "━━━━━━━━━━━━━━\n\n"
+
+        for item in hot_list:
+            rank = item.get("rank", 0)
             title = item.get("title", "未知标题")
             hot_value = item.get("hot_value", 0)
+            source = item.get("source", "")
             category = item.get("category", "")
 
-            # 前三名使用特殊标记
-            if rank == 1:
-                prefix = "🥇 "
-            elif rank == 2:
-                prefix = "🥈 "
-            elif rank == 3:
-                prefix = "🥉 "
-            else:
-                prefix = f"{rank}. "
-
             # 格式化热度值
-            hot_str = ""
+            hot_str = (
+                f"🔥 {hot_value // 10000}万"
+                if hot_value >= 10000
+                else f"🔥 {hot_value}"
+            )
+
+            # 分类和来源
+            meta = []
+            if category:
+                meta.append(f"[{category}]")
+            if source:
+                meta.append(f"来源: {source}")
+
+            meta_str = " | ".join(meta) if meta else ""
+
+            message += f"📌 {rank}. {title}\n"
+            if meta_str:
+                message += f"   {meta_str}\n"
             if hot_value > 0:
-                if hot_value >= 10000:
-                    hot_str = f"🔥 {hot_value // 10000}万热度"
-                else:
-                    hot_str = f"🔥 {hot_value}热度"
+                message += f"   {hot_str}\n"
+            message += "\n"
 
-            # 分类标签
-            category_str = f"[{category}]" if category else ""
-
-            message += f"{prefix}{title} {category_str} {hot_str}\n\n"
-
-            # 每三条添加分隔符
-            if i < len(hot_list) - 1 and (i + 1) % 3 == 0:
-                message += "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n"
-
-        message += "━━━━━━━━━━━━━━━━━━\n"
+        message += "━━━━━━━━━━━━━━\n"
         message += f"📊 更新时间: {timestamp}\n"
-        message += "💡 提示: 发送「网易热榜 数字」可指定获取的条数，如「网易热榜 20」"
+        message += "💡 发送「网易详情 ID」查看指定新闻详情"
 
         return message
+
+    def get_news_by_id(self, news_id: int) -> Dict[str, Any]:
+        """根据新闻ID获取新闻详情"""
+        if not self.latest_data_file or news_id <= 0:
+            return {}
+
+        try:
+            with open(self.latest_data_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            hot_list = data.get("hot_list", [])
+
+            # 查找对应ID的新闻
+            for item in hot_list:
+                if item.get("rank") == news_id:
+                    # 获取关键词并查询详情
+                    title = item.get("title", "")
+                    if title:
+                        news_detail = self.data_collector.get_news_detail(title)
+
+                        # 如果API没有返回回复数，则使用热榜中的数据
+                        if "reply_count" not in news_detail and "reply_count" in item:
+                            news_detail["reply_count"] = item.get("reply_count", 0)
+
+                        return news_detail
+
+            return {}
+        except Exception as e:
+            logger.error(f"根据ID获取新闻详情失败: {e}")
+            return {}
 
     def format_trending_message(self, hot_data: Dict[str, Any]) -> str:
         """格式化热点话题消息"""
@@ -541,6 +599,7 @@ class NetEaseNewsPlugin(BasePlugin):
         url = news_data.get("url", "")
         comments = news_data.get("comments", [])
         hot_score = news_data.get("hot_score", 0)
+        reply_count = news_data.get("reply_count", 0)
 
         message = f"📰 {title}\n\n"
         message += "━━━━━━━━━━━━━━━━━━\n\n"
@@ -551,45 +610,38 @@ class NetEaseNewsPlugin(BasePlugin):
         if hot_score:
             message += f"🔥 热度：{hot_score}\n"
 
+        if reply_count:
+            message += f"💬 评论数：{reply_count}\n"
+
         if url:
             message += f"🔗 链接：{url}\n"
 
-        if comments:
-            message += "\n💬 热门评论：\n\n"
+        # 检查评论内容是否是模拟的
+        has_real_comments = any(
+            not comment.get("content", "").startswith("评论内容 ")
+            for comment in comments[:3]
+            if comment
+        )
+
+        if comments and has_real_comments:
+            message += "\n💬 热门评论：\n"
+            # 使用字母标记评论，从a开始
             for i, comment in enumerate(comments[:5]):  # 最多显示5条评论
-                user = comment.get("user", "匿名用户")
+                letter = chr(97 + i)  # a=97, b=98, ...
                 content = comment.get("content", "无内容")
                 likes = comment.get("likes", 0)
 
-                message += f"{user}：{content}"
+                message += f"{letter}、{content}"
                 if likes > 0:
                     message += f" 👍 {likes}"
-                message += "\n\n"
+                message += "\n"
+        elif reply_count > 0:
+            message += f"\n💬 该新闻共有 {reply_count} 条评论\n"
 
-        message += "━━━━━━━━━━━━━━━━━━\n"
+        message += "\n━━━━━━━━━━━━━━━━━━\n"
         message += "💡 提示: 发送「网易热榜」可查看热榜内容"
 
         return message
-
-    def parse_command(self, content: str) -> Tuple[str, Optional[str]]:
-        """解析命令
-        Return:
-            (命令类型, 参数)
-        """
-        content = content.strip()
-
-        if re.match(r"^网易热榜$", content):
-            return "hot_list", None
-        elif re.match(r"^网易热榜\s+(\d+)$", content):
-            count = re.match(r"^网易热榜\s+(\d+)$", content).group(1)
-            return "hot_list", count
-        elif re.match(r"^网易热点$", content):
-            return "trending", None
-        elif re.match(r"^网易新闻\s+(.+)$", content):
-            keyword = re.match(r"^网易新闻\s+(.+)$", content).group(1)
-            return "news_detail", keyword
-        else:
-            return "", None
 
     @bot.group_event()
     async def on_group_event(self, msg: GroupMessage):
@@ -602,52 +654,42 @@ class NetEaseNewsPlugin(BasePlugin):
         if not self.is_user_authorized(user_id, group_id):
             return
 
-        # 解析命令
-        cmd_type, param = self.parse_command(content)
-        if not cmd_type:
-            return
-
-        # 处理命令
-        if cmd_type == "hot_list":
-            count = int(param) if param else None
-            hot_data = self.get_latest_hot_list(count)
-            message = self.format_hot_list_message(hot_data, count)
+        # 直接处理各种指令模式
+        if content == "网易热榜":
+            hot_data = self.get_latest_hot_list(10)  # 默认10条
+            message = self.format_hot_list_simple(hot_data)
             await msg.reply(text=message)
-        elif cmd_type == "trending":
+
+        elif content == "网易热榜详情":
+            hot_data = self.get_latest_hot_list(10)  # 默认10条
+            message = self.format_hot_list_detail(hot_data)
+            await msg.reply(text=message)
+
+        elif re.match(r"^网易热榜\s+(\d+)$", content):
+            count = int(re.match(r"^网易热榜\s+(\d+)$", content).group(1))
+            hot_data = self.get_latest_hot_list(count)
+            message = self.format_hot_list_simple(hot_data, count)
+            await msg.reply(text=message)
+
+        elif re.match(r"^网易热榜详情\s+(\d+)$", content):
+            count = int(re.match(r"^网易热榜详情\s+(\d+)$", content).group(1))
+            hot_data = self.get_latest_hot_list(count)
+            message = self.format_hot_list_detail(hot_data, count)
+            await msg.reply(text=message)
+
+        elif content == "网易热点":
             trending_data = self.get_latest_trending()
             message = self.format_trending_message(trending_data)
             await msg.reply(text=message)
-        elif cmd_type == "news_detail":
-            news_data = self.get_news_details(param)
+
+        elif re.match(r"^网易新闻\s+(.+)$", content):
+            keyword = re.match(r"^网易新闻\s+(.+)$", content).group(1)
+            news_data = self.get_news_details(keyword)
             message = self.format_news_detail_message(news_data)
             await msg.reply(text=message)
 
-    @bot.private_event()
-    async def on_private_event(self, msg: PrivateMessage):
-        """处理私聊消息"""
-        content = msg.raw_message.strip()
-        user_id = msg.user_id
-
-        # 检查权限
-        if not self.is_user_authorized(user_id):
-            return
-
-        # 解析命令
-        cmd_type, param = self.parse_command(content)
-        if not cmd_type:
-            return
-
-        # 处理命令
-        if cmd_type == "hot_list":
-            count = int(param) if param else None
-            hot_data = self.get_latest_hot_list(count)
-            message = self.format_hot_list_message(hot_data, count)
-            await msg.reply(text=message)
-        elif cmd_type == "trending":
-            trending_data = self.get_latest_trending()
-            message = self.format_trending_message(trending_data)
-            await msg.reply(text=message)
-        elif cmd_type == "news_detail":
-            news_data = self.get_news_details(param)
+        elif re.match(r"^网易详情\s+(\d+)$", content):
+            news_id = int(re.match(r"^网易详情\s+(\d+)$", content).group(1))
+            news_data = self.get_news_by_id(news_id)
             message = self.format_news_detail_message(news_data)
             await msg.reply(text=message)
