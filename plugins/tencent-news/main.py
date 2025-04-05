@@ -7,11 +7,15 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 
 import requests
-from bs4 import BeautifulSoup
 from ncatbot.core.message import GroupMessage, PrivateMessage
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 
 from scheduler import scheduler
+from hotsearch.api import TencentNewsClient
+from hotsearch.api.models.tencent_news import (
+    TencentNewsHotSearchItem,
+    TencentNewsHotSearchResponse,
+)
 
 bot = CompatibleEnrollment
 
@@ -23,8 +27,7 @@ class Config:
     whitelist_groups: List[int]  # 允许使用的群组ID列表
     whitelist_users: List[int]  # 允许使用的用户ID列表
     hot_count: int  # 热榜数量
-    hot_topic_count: int  # 热门话题数量
-    comment_count: int  # 评论数量
+    auth_token: str  # 授权令牌
     update_interval: int  # 数据更新间隔
 
     @classmethod
@@ -37,151 +40,11 @@ class Config:
             whitelist_groups=whitelist.get("group_ids", []),
             whitelist_users=whitelist.get("user_ids", []),
             hot_count=data.get("hot_count", 50),
-            hot_topic_count=data.get("hot_topic_count", 10),
-            comment_count=data.get("comment_count", 10),
+            auth_token=data.get(
+                "auth_token", "Bearer b4abc833-112a-11f0-8295-3292b700066c"
+            ),
             update_interval=data.get("update_interval", 300),
         )
-
-
-class TencentNewsDataCollector:
-    """腾讯新闻数据收集器"""
-
-    def __init__(
-        self,
-        headers_path: Path,
-        data_dir: Path,
-        hot_count: int = 50,
-        hot_topic_count: int = 10,
-        comment_count: int = 10,
-    ):
-        self.headers = self._load_headers(headers_path)
-        self.data_dir = data_dir
-        self.hot_count = hot_count
-        self.hot_topic_count = hot_topic_count
-        self.comment_count = comment_count
-
-    def _load_headers(self, headers_path: Path) -> Dict[str, str]:
-        """加载请求头配置"""
-        if headers_path.exists():
-            with open(headers_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        return {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Referer": "https://news.qq.com/",
-        }
-
-    def get_tencent_hot(self) -> Dict[str, Any]:
-        """获取腾讯新闻热榜数据"""
-        url = "https://news.qq.com/"
-        try:
-            response = requests.get(url, headers=self.headers, timeout=10)
-
-            if response.status_code != 200:
-                return {}
-
-            soup = BeautifulSoup(response.text, "html.parser")
-            hot_list = []
-
-            # 提取热榜数据，实际实现会根据腾讯新闻网页结构调整
-            # 这里提供模拟数据
-            for i in range(min(self.hot_count, 50)):
-                hot_list.append(
-                    {
-                        "rank": i + 1,
-                        "title": f"腾讯新闻热榜标题 {i + 1}",
-                        "hot_value": 100000 - (i * 2000),
-                        "category": ["社会", "国际", "财经", "科技", "体育"][i % 5],
-                        "url": f"https://news.qq.com/newsdetail_{i}.html",
-                    }
-                )
-
-            trending_list = []
-            for i in range(min(self.hot_topic_count, 10)):
-                trending_list.append(
-                    {
-                        "rank": i + 1,
-                        "title": f"腾讯热点话题 {i + 1}",
-                        "trend": ["上升", "下降", "持平"][i % 3],
-                        "url": f"https://news.qq.com/topic_{i}.html",
-                    }
-                )
-
-            return {"hot_list": hot_list, "trending_list": trending_list}
-        except Exception as e:
-            print(f"获取腾讯新闻热榜失败: {e}")
-            return {}
-
-    def get_news_detail(self, keyword: str) -> Dict[str, Any]:
-        """获取新闻详情
-        Args:
-            keyword: 新闻关键词
-        """
-        if not keyword:
-            return {}
-
-        try:
-            # 实际实现需要根据腾讯新闻网站结构调整
-            # 这里提供模拟数据
-            return {
-                "title": f"关于「{keyword}」的新闻",
-                "summary": f"这是关于{keyword}的新闻摘要，包含了主要内容和关键信息...",
-                "source": "腾讯新闻",
-                "publish_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "url": f"https://news.qq.com/search?q={keyword}",
-                "comments": [
-                    {
-                        "content": f"评论内容 {i + 1} 关于{keyword}",
-                        "user": f"用户_{i + 1}",
-                        "likes": (10 - i) * 10,
-                        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    }
-                    for i in range(min(self.comment_count, 10))
-                ],
-            }
-        except Exception as e:
-            print(f"获取新闻详情失败: {e}")
-            return {}
-
-    def collect_data(self) -> Dict[str, Any]:
-        """收集腾讯新闻数据并整合"""
-        now = datetime.now()
-        timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
-
-        hot_data = self.get_tencent_hot()
-        if not hot_data:
-            return {}
-
-        result = {
-            "timestamp": timestamp,
-            "hot_list": hot_data.get("hot_list", []),
-            "trending_list": hot_data.get("trending_list", []),
-            "metadata": {
-                "source": "tencent_news",
-                "hot_count": len(hot_data.get("hot_list", [])),
-                "trending_count": len(hot_data.get("trending_list", [])),
-                "update_time": timestamp,
-            },
-        }
-        return result
-
-    def save_data(self, data: Dict[str, Any]) -> str:
-        """保存数据到按小时组织的文件中"""
-        if not data:
-            return ""
-
-        # 使用年月日-小时格式，如 "YYYYMMDD-HH"
-        now = datetime.now()
-        folder_name = now.strftime("%Y%m%d-%H")
-        folder_path = self.data_dir / folder_name
-        folder_path.mkdir(exist_ok=True, parents=True)
-
-        file_name = f"tencent_news_{now.strftime('%Y%m%d_%H%M%S')}.json"
-        file_path = folder_path / file_name
-
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-        return str(file_path)
 
 
 class TencentNewsPlugin(BasePlugin):
@@ -193,22 +56,28 @@ class TencentNewsPlugin(BasePlugin):
     # 定义类变量
     config = None
     config_path = None
-    headers_path = None
     config_last_modified = 0
     data_dir = None
-    latest_data_file = None
+    latest_data = None
+    news_client = None
 
     async def on_load(self):
         """插件加载时执行"""
         # 初始化插件
         base_path = Path(__file__).parent
         self.config_path = base_path / "config" / "config.toml"
-        self.headers_path = base_path / "config" / "headers.json"
         self.data_dir = base_path / "data"
         self.data_dir.mkdir(exist_ok=True)
 
         # 加载配置
         self.load_config()
+
+        # 初始化腾讯新闻客户端
+        self.news_client = TencentNewsClient(
+            auth_token=self.config.auth_token,
+            save_data=True,
+            data_dir=str(self.data_dir),
+        )
 
         # 设置定时任务
         scheduler.add_random_minute_task(self.fetch_tencent_news, 0, 5)
@@ -240,6 +109,9 @@ class TencentNewsPlugin(BasePlugin):
         current_mtime = self.config_path.stat().st_mtime
         if current_mtime > self.config_last_modified:
             self.load_config()
+            # 更新客户端配置
+            if self.news_client:
+                self.news_client.auth_token = self.config.auth_token
             return True
         return False
 
@@ -268,17 +140,10 @@ class TencentNewsPlugin(BasePlugin):
             # 检查配置是否更新
             self.check_config_update()
 
-            collector = TencentNewsDataCollector(
-                self.headers_path,
-                self.data_dir,
-                self.config.hot_count,
-                self.config.hot_topic_count,
-                self.config.comment_count,
-            )
-
-            data = collector.collect_data()
-            if data:
-                self.latest_data_file = collector.save_data(data)
+            # 获取热搜数据
+            response = self.news_client.get_hot(as_model=True)
+            if response and hasattr(response, "items") and response.items:
+                self.latest_data = response
                 await self.clean_old_files()
         except Exception as e:
             print(f"获取腾讯新闻数据失败: {e}")
@@ -289,16 +154,13 @@ class TencentNewsPlugin(BasePlugin):
             import os
             import time
 
-            # 当前时间戳
-            now = time.time()
-
             # 获取所有日期目录
             date_dirs = [d for d in self.data_dir.iterdir() if d.is_dir()]
 
             # 按创建时间排序
             date_dirs.sort(key=lambda x: x.stat().st_ctime)
 
-            # 保留最近7天数据（或配置指定的天数）
+            # 保留最近7天数据
             keep_days = 7
             if len(date_dirs) > keep_days:
                 for old_dir in date_dirs[:-keep_days]:
@@ -309,117 +171,81 @@ class TencentNewsPlugin(BasePlugin):
         except Exception as e:
             print(f"清理旧文件失败: {e}")
 
-    def get_latest_hot_list(self, count: int = None) -> Dict[str, Any]:
+    def get_latest_hot_list(self, count: int = None) -> List[TencentNewsHotSearchItem]:
         """获取最新热榜数据"""
-        if not self.latest_data_file:
-            return {}
+        if not self.latest_data:
+            # 如果没有缓存数据，尝试获取
+            try:
+                response = self.news_client.get_items(as_model=True)
+                if not count:
+                    count = 10  # 默认显示10条
+                return response[:count] if count and count > 0 else response
+            except Exception as e:
+                print(f"获取最新热榜数据失败: {e}")
+                return []
 
-        try:
-            with open(self.latest_data_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
+        # 使用缓存数据
+        items = self.latest_data.items
+        if count and count > 0:
+            items = items[:count]
+        return items
 
-            if not count:
-                count = 10  # 默认显示10条
-
-            hot_list = data.get("hot_list", [])
-            if count and count > 0:
-                hot_list = hot_list[:count]
-
-            return {
-                "timestamp": data.get("timestamp", ""),
-                "hot_list": hot_list,
-                "metadata": data.get("metadata", {}),
-            }
-        except Exception as e:
-            print(f"获取最新热榜数据失败: {e}")
-            return {}
-
-    def get_latest_trending(self) -> Dict[str, Any]:
-        """获取最新热点话题数据"""
-        if not self.latest_data_file:
-            return {}
-
-        try:
-            with open(self.latest_data_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            return {
-                "timestamp": data.get("timestamp", ""),
-                "trending_list": data.get("trending_list", []),
-                "metadata": data.get("metadata", {}),
-            }
-        except Exception as e:
-            print(f"获取最新热点话题数据失败: {e}")
-            return {}
-
-    def get_news_details(self, keyword: str) -> Dict[str, Any]:
-        """获取新闻详情"""
+    def search_news(self, keyword: str) -> List[TencentNewsHotSearchItem]:
+        """搜索相关新闻"""
         if not keyword:
-            return {}
+            return []
 
-        collector = TencentNewsDataCollector(
-            self.headers_path,
-            self.data_dir,
-            self.config.hot_count,
-            self.config.hot_topic_count,
-            self.config.comment_count,
-        )
+        try:
+            # 获取所有热搜项目
+            items = self.news_client.get_items(as_model=True)
 
-        return collector.get_news_detail(keyword)
+            # 搜索包含关键词的项目
+            return [item for item in items if keyword in item.title]
+        except Exception as e:
+            print(f"搜索新闻失败: {e}")
+            return []
 
     def format_hot_list_message(
-        self, hot_data: Dict[str, Any], count: int = None
+        self, items: List[TencentNewsHotSearchItem], count: int = None
     ) -> str:
         """格式化热榜消息"""
-        if not hot_data:
+        if not items:
             return "❌ 获取腾讯新闻热榜失败，请稍后再试"
-
-        hot_list = hot_data.get("hot_list", [])
-        timestamp = hot_data.get(
-            "timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        )
-
-        if not hot_list:
-            return "❌ 腾讯新闻热榜数据为空"
 
         # 限制条数
         if count and count > 0:
-            hot_list = hot_list[:count]
+            items = items[:count]
 
-        message = f"📰 腾讯新闻热榜 ({timestamp})\n\n共{len(hot_list)}条热榜\n"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        message = f"📰 腾讯新闻热榜 ({timestamp})\n\n共{len(items)}条热榜\n"
         message += "━━━━━━━━━━━━━━━━━━\n\n"
 
-        for i, item in enumerate(hot_list):
-            rank = item.get("rank", i + 1)
-            title = item.get("title", "未知标题")
-            hot_value = item.get("hot_value", 0)
-            category = item.get("category", "")
-
+        for i, item in enumerate(items):
             # 前三名使用特殊标记
-            if rank == 1:
+            if i == 0:
                 prefix = "🥇 "
-            elif rank == 2:
+            elif i == 1:
                 prefix = "🥈 "
-            elif rank == 3:
+            elif i == 2:
                 prefix = "🥉 "
             else:
-                prefix = f"{rank}. "
+                prefix = f"{i+1}. "
 
             # 格式化热度值
             hot_str = ""
-            if hot_value > 0:
-                if hot_value >= 10000:
-                    hot_str = f"🔥 {hot_value // 10000}万热度"
+            if item.hot_score:
+                if item.hot_score >= 10000:
+                    hot_str = f"🔥 {item.hot_score // 10000}万热度"
                 else:
-                    hot_str = f"🔥 {hot_value}热度"
+                    hot_str = f"🔥 {item.hot_score}热度"
 
-            # 分类标签
-            category_str = f"[{category}]" if category else ""
+            # 标题
+            title = item.title
 
-            message += f"{prefix}{title} {category_str} {hot_str}\n\n"
+            message += f"{prefix}{title} {hot_str}\n\n"
 
             # 每三条添加分隔符
-            if i < len(hot_list) - 1 and (i + 1) % 3 == 0:
+            if i < len(items) - 1 and (i + 1) % 3 == 0:
                 message += "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n"
 
         message += "━━━━━━━━━━━━━━━━━━\n"
@@ -428,80 +254,26 @@ class TencentNewsPlugin(BasePlugin):
 
         return message
 
-    def format_trending_message(self, hot_data: Dict[str, Any]) -> str:
-        """格式化热点话题消息"""
-        if not hot_data:
-            return "❌ 获取腾讯热点话题失败，请稍后再试"
-
-        trending_list = hot_data.get("trending_list", [])
-        timestamp = hot_data.get(
-            "timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        )
-
-        if not trending_list:
-            return "❌ 腾讯热点话题数据为空"
-
-        message = f"🔍 腾讯热点话题 ({timestamp})\n\n共{len(trending_list)}条热点\n"
-        message += "━━━━━━━━━━━━━━━━━━\n\n"
-
-        for i, item in enumerate(trending_list):
-            rank = item.get("rank", i + 1)
-            title = item.get("title", "未知话题")
-            trend = item.get("trend", "")
-
-            # 趋势图标
-            trend_icon = ""
-            if trend == "上升":
-                trend_icon = "📈 "
-            elif trend == "下降":
-                trend_icon = "📉 "
-            elif trend == "持平":
-                trend_icon = "📊 "
-
-            message += f"{rank}. {title} {trend_icon}\n\n"
-
-            # 每三条添加分隔符
-            if i < len(trending_list) - 1 and (i + 1) % 3 == 0:
-                message += "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n"
-
-        message += "━━━━━━━━━━━━━━━━━━\n"
-        message += f"📊 更新时间: {timestamp}\n"
-        message += "💡 提示: 发送「腾讯新闻 关键词」可查询相关新闻详情"
-
-        return message
-
-    def format_news_detail_message(self, news_data: Dict[str, Any]) -> str:
+    def format_news_detail_message(
+        self, items: List[TencentNewsHotSearchItem], keyword: str
+    ) -> str:
         """格式化新闻详情消息"""
-        if not news_data:
-            return "❌ 获取新闻详情失败，请稍后再试"
+        if not items:
+            return f"❌ 未找到与「{keyword}」相关的新闻，请换个关键词试试"
 
-        title = news_data.get("title", "未知标题")
-        summary = news_data.get("summary", "无内容摘要")
-        source = news_data.get("source", "未知来源")
-        publish_time = news_data.get("publish_time", "未知时间")
-        url = news_data.get("url", "")
-        comments = news_data.get("comments", [])
-
-        message = f"📰 {title}\n\n"
+        message = f"📰 关于「{keyword}」的新闻 (共{len(items)}条)\n\n"
         message += "━━━━━━━━━━━━━━━━━━\n\n"
-        message += f"📄 内容摘要：\n{summary}\n\n"
-        message += f"🔖 来源：{source}\n"
-        message += f"🕒 发布时间：{publish_time}\n"
 
-        if url:
-            message += f"🔗 链接：{url}\n"
-
-        if comments:
-            message += "\n💬 热门评论：\n\n"
-            for i, comment in enumerate(comments[:5]):  # 最多显示5条评论
-                user = comment.get("user", "匿名用户")
-                content = comment.get("content", "无内容")
-                likes = comment.get("likes", 0)
-
-                message += f"{user}：{content}"
-                if likes > 0:
-                    message += f" 👍 {likes}"
-                message += "\n\n"
+        # 最多显示5条相关新闻
+        for i, item in enumerate(items[:5]):
+            message += f"{i+1}. {item.title}\n"
+            if item.hot_score:
+                message += f"   🔥 热度: {item.hot_score}\n"
+            if item.www_url:
+                message += f"   🔗 链接: {item.www_url}\n"
+            if item.comment_num:
+                message += f"   💬 评论数: {item.comment_num}\n"
+            message += "\n"
 
         message += "━━━━━━━━━━━━━━━━━━\n"
         message += "💡 提示: 发送「腾讯热榜」可查看热榜内容"
@@ -520,8 +292,6 @@ class TencentNewsPlugin(BasePlugin):
         elif re.match(r"^腾讯热榜\s+(\d+)$", content):
             count = re.match(r"^腾讯热榜\s+(\d+)$", content).group(1)
             return "hot_list", count
-        elif re.match(r"^腾讯热点$", content):
-            return "trending", None
         elif re.match(r"^腾讯新闻\s+(.+)$", content):
             keyword = re.match(r"^腾讯新闻\s+(.+)$", content).group(1)
             return "news_detail", keyword
@@ -547,16 +317,12 @@ class TencentNewsPlugin(BasePlugin):
         # 处理命令
         if cmd_type == "hot_list":
             count = int(param) if param else None
-            hot_data = self.get_latest_hot_list(count)
-            message = self.format_hot_list_message(hot_data, count)
-            await msg.reply(text=message)
-        elif cmd_type == "trending":
-            trending_data = self.get_latest_trending()
-            message = self.format_trending_message(trending_data)
+            hot_items = self.get_latest_hot_list(count)
+            message = self.format_hot_list_message(hot_items, count)
             await msg.reply(text=message)
         elif cmd_type == "news_detail":
-            news_data = self.get_news_details(param)
-            message = self.format_news_detail_message(news_data)
+            news_items = self.search_news(param)
+            message = self.format_news_detail_message(news_items, param)
             await msg.reply(text=message)
 
     @bot.private_event()
@@ -577,14 +343,10 @@ class TencentNewsPlugin(BasePlugin):
         # 处理命令
         if cmd_type == "hot_list":
             count = int(param) if param else None
-            hot_data = self.get_latest_hot_list(count)
-            message = self.format_hot_list_message(hot_data, count)
-            await msg.reply(text=message)
-        elif cmd_type == "trending":
-            trending_data = self.get_latest_trending()
-            message = self.format_trending_message(trending_data)
+            hot_items = self.get_latest_hot_list(count)
+            message = self.format_hot_list_message(hot_items, count)
             await msg.reply(text=message)
         elif cmd_type == "news_detail":
-            news_data = self.get_news_details(param)
-            message = self.format_news_detail_message(news_data)
+            news_items = self.search_news(param)
+            message = self.format_news_detail_message(news_items, param)
             await msg.reply(text=message)

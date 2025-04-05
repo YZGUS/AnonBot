@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import tomllib
 from dataclasses import dataclass
@@ -6,12 +7,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 
-import requests
-from bs4 import BeautifulSoup
+from hotsearch.api import NetEaseNewsClient
 from ncatbot.core.message import GroupMessage, PrivateMessage
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 
 from scheduler import scheduler
+
+# 创建logger
+logger = logging.getLogger("NetEaseNewsPlugin")
 
 bot = CompatibleEnrollment
 
@@ -26,12 +29,14 @@ class Config:
     hot_topic_count: int  # 热门话题数量
     comment_count: int  # 评论数量
     update_interval: int  # 数据更新间隔
+    api_token: str  # API授权令牌
 
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> "Config":
         """从字典创建配置"""
         whitelist = config_dict.get("whitelist", {})
         data = config_dict.get("data", {})
+        api = config_dict.get("api", {})
 
         return cls(
             whitelist_groups=whitelist.get("group_ids", []),
@@ -40,6 +45,7 @@ class Config:
             hot_topic_count=data.get("hot_topic_count", 10),
             comment_count=data.get("comment_count", 10),
             update_interval=data.get("update_interval", 300),
+            api_token=api.get("token", "Bearer b4abc833-112a-11f0-8295-3292b700066c"),
         )
 
 
@@ -47,70 +53,85 @@ class NetEaseNewsDataCollector:
     """网易新闻数据收集器"""
 
     def __init__(
-        self,
-        headers_path: Path,
-        data_dir: Path,
-        hot_count: int = 50,
-        hot_topic_count: int = 10,
-        comment_count: int = 10,
+            self,
+            data_dir: Path,
+            hot_count: int = 50,
+            hot_topic_count: int = 10,
+            comment_count: int = 10,
+            api_token: str = None,
     ):
-        self.headers = self._load_headers(headers_path)
+        """初始化数据收集器
+
+        Args:
+            data_dir: 数据保存目录
+            hot_count: 热榜数量
+            hot_topic_count: 热门话题数量
+            comment_count: 评论数量
+            api_token: API授权令牌，如果为None则使用默认值
+        """
         self.data_dir = data_dir
         self.hot_count = hot_count
         self.hot_topic_count = hot_topic_count
         self.comment_count = comment_count
+        self.api_token = api_token
 
-    def _load_headers(self, headers_path: Path) -> Dict[str, str]:
-        """加载请求头配置"""
-        if headers_path.exists():
-            with open(headers_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        return {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Referer": "https://news.163.com/",
-        }
+        # 初始化API客户端
+        self.client = NetEaseNewsClient(
+            auth_token=api_token, save_data=True, data_dir=str(data_dir)
+        )
 
     def get_netease_hot(self) -> Dict[str, Any]:
         """获取网易新闻热榜数据"""
-        url = "https://news.163.com/"
         try:
-            response = requests.get(url, headers=self.headers, timeout=10)
+            # 使用NetEaseNewsClient获取热榜数据
+            hot_response = self.client.get_hot(as_model=True)
 
-            if response.status_code != 200:
+            if not hot_response or not hot_response.items:
+                logger.error("获取网易新闻数据失败：数据为空")
                 return {}
 
-            soup = BeautifulSoup(response.text, "html.parser")
-            hot_list = []
-
-            # 提取热榜数据，实际实现会根据网易新闻网页结构调整
-            # 这里提供模拟数据
-            for i in range(min(self.hot_count, 50)):
-                hot_list.append(
+            # 将结构化数据转换为插件需要的格式
+            hot_items = []
+            for i, item in enumerate(hot_response.items):
+                hot_items.append(
                     {
                         "rank": i + 1,
-                        "title": f"网易新闻热榜标题 {i + 1}",
-                        "hot_value": 100000 - (i * 2000),
-                        "category": ["社会", "国内", "国际", "财经", "科技", "体育"][
-                            i % 6
-                        ],
-                        "url": f"https://news.163.com/newsdetail_{i}.html",
+                        "title": item.title,
+                        "hot_value": item.hot_score or 0,
+                        "url": item.www_url,
+                        "source": item.source,
+                        "reply_count": item.reply_count,
+                        "category": "视频" if item.is_video else "",
                     }
                 )
 
+            # 获取新闻数据
+            news_response = self.client.get_news(as_model=True)
             trending_list = []
-            for i in range(min(self.hot_topic_count, 10)):
-                trending_list.append(
-                    {
-                        "rank": i + 1,
-                        "title": f"网易热点话题 {i + 1}",
-                        "trend": ["上升", "下降", "持平"][i % 3],
-                        "url": f"https://news.163.com/topic_{i}.html",
-                    }
-                )
+            if news_response and news_response.items:
+                for i, item in enumerate(news_response.items[: self.hot_topic_count]):
+                    trending_list.append(
+                        {
+                            "rank": i + 1,
+                            "title": item.title,
+                            "url": item.www_url,
+                            "source": item.source,
+                            "trend": "上升" if (item.hot_score or 0) > 1000 else "持平",
+                        }
+                    )
 
-            return {"hot_list": hot_list, "trending_list": trending_list}
+            # 构建返回数据
+            data = {
+                "hot_items": hot_items,
+                "hot_list": hot_items,
+                "trending_list": trending_list,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "platform": "ne-news",
+            }
+
+            return data
         except Exception as e:
-            print(f"获取网易新闻热榜失败: {e}")
+            logger.error(f"获取网易新闻数据失败: {e}")
             return {}
 
     def get_news_detail(self, keyword: str) -> Dict[str, Any]:
@@ -122,26 +143,61 @@ class NetEaseNewsDataCollector:
             return {}
 
         try:
-            # 实际实现需要根据网易新闻网站结构调整
-            # 这里提供模拟数据
-            return {
-                "title": f"关于「{keyword}」的网易新闻",
-                "summary": f"这是关于{keyword}的新闻摘要，包含了主要内容和关键信息。网易新闻报道称...",
-                "source": "网易新闻",
-                "publish_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "url": f"https://news.163.com/search?q={keyword}",
-                "comments": [
-                    {
-                        "content": f"评论内容 {i + 1} 关于{keyword}",
-                        "user": f"网易用户_{i + 1}",
-                        "likes": (10 - i) * 10,
-                        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    }
-                    for i in range(min(self.comment_count, 10))
-                ],
-            }
+            # 从热榜和新闻中搜索相关内容
+            news_items = self.client.get_items(sub_tab="news", as_model=True)
+            hot_items = self.client.get_items(sub_tab="htd", as_model=True)
+
+            # 合并两个列表
+            all_items = list(news_items) + list(hot_items)
+
+            # 搜索匹配的新闻
+            matched_items = [item for item in all_items if keyword in item.title]
+
+            if matched_items:
+                # 使用第一个匹配项
+                item = matched_items[0]
+                return {
+                    "title": item.title,
+                    "summary": f"这是关于{keyword}的新闻。来源: {item.source or '网易新闻'}",
+                    "source": item.source or "网易新闻",
+                    "publish_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "url": item.www_url,
+                    "hot_score": item.hot_score,
+                    "comments": [
+                        {
+                            "content": item.hot_comment
+                                       or f"评论内容 {i + 1} 关于{keyword}",
+                            "user": f"网易用户_{i + 1}",
+                            "likes": (
+                                (item.reply_count or 0) // (i + 1)
+                                if i > 0
+                                else item.reply_count or 100
+                            ),
+                            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        }
+                        for i in range(min(self.comment_count, 10))
+                    ],
+                }
+            else:
+                # 没有找到匹配项，返回模拟数据
+                return {
+                    "title": f"关于「{keyword}」的网易新闻",
+                    "summary": f"这是关于{keyword}的新闻摘要，包含了主要内容和关键信息。网易新闻报道称...",
+                    "source": "网易新闻",
+                    "publish_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "url": f"https://news.163.com/search?q={keyword}",
+                    "comments": [
+                        {
+                            "content": f"评论内容 {i + 1} 关于{keyword}",
+                            "user": f"网易用户_{i + 1}",
+                            "likes": (10 - i) * 10,
+                            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        }
+                        for i in range(min(self.comment_count, 10))
+                    ],
+                }
         except Exception as e:
-            print(f"获取新闻详情失败: {e}")
+            logger.error(f"获取新闻详情失败: {e}")
             return {}
 
     def collect_data(self) -> Dict[str, Any]:
@@ -153,37 +209,38 @@ class NetEaseNewsDataCollector:
         if not hot_data:
             return {}
 
-        result = {
-            "timestamp": timestamp,
-            "hot_list": hot_data.get("hot_list", []),
-            "trending_list": hot_data.get("trending_list", []),
-            "metadata": {
-                "source": "netease_news",
-                "hot_count": len(hot_data.get("hot_list", [])),
-                "trending_count": len(hot_data.get("trending_list", [])),
-                "update_time": timestamp,
-            },
+        # 保持原有数据结构，添加统一的时间戳
+        hot_data["timestamp"] = timestamp
+        hot_data["metadata"] = {
+            "source": "ne-news",
+            "hot_count": len(hot_data.get("hot_items", [])),
+            "update_time": timestamp,
         }
-        return result
+
+        return hot_data
 
     def save_data(self, data: Dict[str, Any]) -> str:
-        """保存数据到按小时组织的文件中"""
+        """保存数据到JSON文件，使用年月日的文件夹格式
+
+        Args:
+            data: 热榜数据
+        """
         if not data:
             return ""
 
-        # 使用年月日-小时格式，如 "YYYYMMDD-HH"
         now = datetime.now()
-        folder_name = now.strftime("%Y%m%d-%H")
-        folder_path = self.data_dir / folder_name
-        folder_path.mkdir(exist_ok=True, parents=True)
+        date_str = now.strftime("%Y%m%d")
+        date_dir = self.data_dir / date_str
+        date_dir.mkdir(exist_ok=True, parents=True)
 
-        file_name = f"netease_news_{now.strftime('%Y%m%d_%H%M%S')}.json"
-        file_path = folder_path / file_name
+        timestamp = now.strftime("%Y%m%d%H%M%S")
+        filename = f"nenews_hot_{timestamp}.json"
+        filepath = date_dir / filename
 
-        with open(file_path, "w", encoding="utf-8") as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-        return str(file_path)
+        return str(filepath)
 
 
 class NetEaseNewsPlugin(BasePlugin):
@@ -201,8 +258,7 @@ class NetEaseNewsPlugin(BasePlugin):
     latest_data_file = None
 
     async def on_load(self):
-        """插件加载时执行"""
-        # 初始化插件
+        """初始化插件"""
         base_path = Path(__file__).parent
         self.config_path = base_path / "config" / "config.toml"
         self.headers_path = base_path / "config" / "headers.json"
@@ -212,8 +268,25 @@ class NetEaseNewsPlugin(BasePlugin):
         # 加载配置
         self.load_config()
 
-        # 设置定时任务
-        scheduler.add_random_minute_task(self.fetch_netease_news, 0, 5)
+        # 设置日志级别
+        log_level = logging.INFO
+        if hasattr(self.config, "log_level"):
+            log_level = getattr(logging, self.config.log_level.upper(), logging.INFO)
+        logger.setLevel(log_level)
+
+        # 初始化数据收集器
+        self.data_collector = NetEaseNewsDataCollector(
+            self.data_dir,
+            self.config.hot_count,
+            self.config.hot_topic_count,
+            self.config.comment_count,
+            self.config.api_token,
+        )
+
+        # 设置定时任务，定期获取热榜数据
+        scheduler.add_random_minute_task(
+            self.fetch_netease_news, 0, self.config.update_interval, 5
+        )
 
         # 立即执行一次数据获取
         await self.fetch_netease_news()
@@ -230,7 +303,7 @@ class NetEaseNewsPlugin(BasePlugin):
             self.config = Config.from_dict(config_dict)
             self.config_last_modified = self.config_path.stat().st_mtime
         except Exception as e:
-            print(f"加载配置失败: {e}")
+            logger.error(f"加载配置失败: {e}")
             # 使用默认配置
             self.config = Config.from_dict({})
 
@@ -270,20 +343,12 @@ class NetEaseNewsPlugin(BasePlugin):
             # 检查配置是否更新
             self.check_config_update()
 
-            collector = NetEaseNewsDataCollector(
-                self.headers_path,
-                self.data_dir,
-                self.config.hot_count,
-                self.config.hot_topic_count,
-                self.config.comment_count,
-            )
-
-            data = collector.collect_data()
+            data = self.data_collector.collect_data()
             if data:
-                self.latest_data_file = collector.save_data(data)
+                self.latest_data_file = self.data_collector.save_data(data)
                 await self.clean_old_files()
         except Exception as e:
-            print(f"获取网易新闻数据失败: {e}")
+            logger.error(f"获取网易新闻数据失败: {e}")
 
     async def clean_old_files(self) -> None:
         """清理旧数据文件"""
@@ -309,7 +374,7 @@ class NetEaseNewsPlugin(BasePlugin):
                         os.remove(file)
                     os.rmdir(old_dir)
         except Exception as e:
-            print(f"清理旧文件失败: {e}")
+            logger.error(f"清理旧文件失败: {e}")
 
     def get_latest_hot_list(self, count: int = None) -> Dict[str, Any]:
         """获取最新热榜数据"""
@@ -333,7 +398,7 @@ class NetEaseNewsPlugin(BasePlugin):
                 "metadata": data.get("metadata", {}),
             }
         except Exception as e:
-            print(f"获取最新热榜数据失败: {e}")
+            logger.error(f"获取最新热榜数据失败: {e}")
             return {}
 
     def get_latest_trending(self) -> Dict[str, Any]:
@@ -351,7 +416,7 @@ class NetEaseNewsPlugin(BasePlugin):
                 "metadata": data.get("metadata", {}),
             }
         except Exception as e:
-            print(f"获取最新热点话题数据失败: {e}")
+            logger.error(f"获取最新热点话题数据失败: {e}")
             return {}
 
     def get_news_details(self, keyword: str) -> Dict[str, Any]:
@@ -359,18 +424,10 @@ class NetEaseNewsPlugin(BasePlugin):
         if not keyword:
             return {}
 
-        collector = NetEaseNewsDataCollector(
-            self.headers_path,
-            self.data_dir,
-            self.config.hot_count,
-            self.config.hot_topic_count,
-            self.config.comment_count,
-        )
-
-        return collector.get_news_detail(keyword)
+        return self.data_collector.get_news_detail(keyword)
 
     def format_hot_list_message(
-        self, hot_data: Dict[str, Any], count: int = None
+            self, hot_data: Dict[str, Any], count: int = None
     ) -> str:
         """格式化热榜消息"""
         if not hot_data:
@@ -483,12 +540,16 @@ class NetEaseNewsPlugin(BasePlugin):
         publish_time = news_data.get("publish_time", "未知时间")
         url = news_data.get("url", "")
         comments = news_data.get("comments", [])
+        hot_score = news_data.get("hot_score", 0)
 
         message = f"📰 {title}\n\n"
         message += "━━━━━━━━━━━━━━━━━━\n\n"
         message += f"📄 内容摘要：\n{summary}\n\n"
         message += f"🔖 来源：{source}\n"
         message += f"🕒 发布时间：{publish_time}\n"
+
+        if hot_score:
+            message += f"🔥 热度：{hot_score}\n"
 
         if url:
             message += f"🔗 链接：{url}\n"

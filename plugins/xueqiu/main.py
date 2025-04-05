@@ -7,14 +7,13 @@ import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 
 import tomllib
 import requests
 from ncatbot.core.message import GroupMessage, PrivateMessage
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 
-from rebang.scraper import get_tab_data
 from scheduler import scheduler
 
 # 配置日志
@@ -22,6 +21,536 @@ logger = logging.getLogger("xueqiu")
 
 # 兼容装饰器
 bot = CompatibleEnrollment
+
+
+# 添加雪球客户端数据模型
+@dataclass
+class XueqiuStock:
+    """雪球股票模型"""
+
+    name: str
+    percentage: float
+
+
+@dataclass
+class XueqiuTopicItem:
+    """雪球话题条目模型"""
+
+    item_key: str
+    title: str
+    desc: str
+    www_url: str
+    reason: str
+    stocks: List[XueqiuStock]
+
+    @property
+    def read_count(self) -> Optional[int]:
+        """从热度原因中提取阅读量"""
+        try:
+            if not self.reason or "阅读" not in self.reason:
+                return None
+
+            text = self.reason.strip()
+            if "万阅读" in text:
+                num_text = text.split("万阅读")[0].strip()
+                if num_text.isdigit():
+                    return int(num_text) * 10000
+                else:
+                    try:
+                        return int(float(num_text) * 10000)
+                    except:
+                        return None
+            elif "阅读" in text:
+                num_text = text.split("阅读")[0].strip()
+                if num_text.isdigit():
+                    return int(num_text)
+            return None
+        except:
+            return None
+
+    @property
+    def top_stock(self) -> Optional[XueqiuStock]:
+        """获取排名第一的股票"""
+        if self.stocks and len(self.stocks) > 0:
+            return self.stocks[0]
+        return None
+
+    def get_positive_stocks(self) -> List[XueqiuStock]:
+        """获取涨幅为正的股票列表"""
+        return [stock for stock in self.stocks if stock.percentage > 0]
+
+    def get_negative_stocks(self) -> List[XueqiuStock]:
+        """获取涨幅为负的股票列表"""
+        return [stock for stock in self.stocks if stock.percentage < 0]
+
+
+@dataclass
+class XueqiuNewsItem:
+    """雪球新闻条目模型"""
+
+    item_key: str
+    title: str
+    www_url: str
+    created_at: int  # 毫秒时间戳
+
+    @property
+    def formatted_date(self) -> str:
+        """格式化的日期时间字符串"""
+        return datetime.fromtimestamp(self.created_at / 1000).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+
+@dataclass
+class XueqiuNoticeItem:
+    """雪球公告条目模型"""
+
+    item_key: str
+    title: str
+    www_url: str
+    created_at: int  # 毫秒时间戳
+
+    @property
+    def formatted_date(self) -> str:
+        """格式化的日期时间字符串"""
+        return datetime.fromtimestamp(self.created_at / 1000).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+
+@dataclass
+class XueqiuHotSearchResponse:
+    """热帖响应模型"""
+
+    items: List[Union[XueqiuTopicItem, XueqiuNewsItem, XueqiuNoticeItem]]
+    last_list_time: int
+    next_refresh_time: int
+    version: int
+    current_page: int
+    total_page: int
+
+
+# 新增雪球客户端
+class XueqiuClient:
+    """雪球客户端，用于获取雪球平台热帖、新闻和公告数据"""
+
+    def __init__(
+        self, auth_token: str = None, save_data: bool = False, data_dir: str = "./data"
+    ):
+        """初始化客户端
+
+        Args:
+            auth_token: 授权令牌，默认为None
+            save_data: 是否保存原始数据，默认为False
+            data_dir: 数据保存目录，默认为"./data"
+        """
+        self.auth_token = auth_token or "Bearer b4abc833-112a-11f0-8295-3292b700066c"
+        self.save_data = save_data
+        self.data_dir = Path(data_dir)
+        if save_data:
+            self.data_dir.mkdir(exist_ok=True, parents=True)
+
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Referer": "https://xueqiu.com/",
+            "Origin": "https://xueqiu.com",
+            "Authorization": self.auth_token,
+        }
+
+        # 缓存数据
+        self._topic_data = None
+        self._news_data = None
+        self._notice_data = None
+
+    def _save_json_data(self, data: Dict[str, Any], file_prefix: str) -> None:
+        """保存JSON数据到文件
+
+        Args:
+            data: 要保存的数据
+            file_prefix: 文件名前缀
+        """
+        if not self.save_data:
+            return
+
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        filename = f"{file_prefix}_{timestamp}.json"
+        filepath = self.data_dir / filename
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def get_topic(
+        self, page: int = 1, as_model: bool = False
+    ) -> Union[Dict[str, Any], XueqiuHotSearchResponse]:
+        """获取雪球话题数据
+
+        Args:
+            page: 页码，从1开始
+            as_model: 是否返回结构化数据模型
+
+        Returns:
+            字典或XueqiuHotSearchResponse对象
+        """
+        url = f"https://xueqiu.com/statuses/hot/listV2.json?since_id=-1&max_id=-1&size=10&page={page}"
+        try:
+            response = requests.get(url, headers=self.headers, timeout=10)
+            if response.status_code != 200:
+                logger.error(f"获取雪球话题数据失败：HTTP状态码 {response.status_code}")
+                return (
+                    {}
+                    if not as_model
+                    else XueqiuHotSearchResponse(
+                        items=[],
+                        last_list_time=0,
+                        next_refresh_time=0,
+                        version=0,
+                        current_page=0,
+                        total_page=0,
+                    )
+                )
+
+            data = response.json()
+
+            # 保存原始数据
+            if self.save_data:
+                self._save_json_data(data, "xueqiu_topic")
+
+            # 更新缓存
+            self._topic_data = data
+
+            # 返回数据或模型
+            if not as_model:
+                return data
+            else:
+                # 解析数据为模型
+                topic_items = []
+                for item in data.get("items", []):
+                    # 处理股票数据
+                    stocks = []
+                    for stock in item.get("stocks", []):
+                        stocks.append(
+                            XueqiuStock(
+                                name=stock.get("name", ""),
+                                percentage=float(stock.get("percent", 0)),
+                            )
+                        )
+
+                    # 创建话题项
+                    topic_items.append(
+                        XueqiuTopicItem(
+                            item_key=item.get("item_id", ""),
+                            title=item.get("title", ""),
+                            desc=item.get("desc", ""),
+                            www_url=item.get("target", ""),
+                            reason=item.get("reason", ""),
+                            stocks=stocks,
+                        )
+                    )
+
+                return XueqiuHotSearchResponse(
+                    items=topic_items,
+                    last_list_time=data.get("last_list_time", 0),
+                    next_refresh_time=data.get("next_refresh_time", 0),
+                    version=data.get("version", 0),
+                    current_page=page,
+                    total_page=data.get("total_page", 1),
+                )
+        except Exception as e:
+            logger.error(f"获取雪球话题数据异常: {e}")
+            return (
+                {}
+                if not as_model
+                else XueqiuHotSearchResponse(
+                    items=[],
+                    last_list_time=0,
+                    next_refresh_time=0,
+                    version=0,
+                    current_page=0,
+                    total_page=0,
+                )
+            )
+
+    def get_news(
+        self, page: int = 1, as_model: bool = False
+    ) -> Union[Dict[str, Any], XueqiuHotSearchResponse]:
+        """获取雪球新闻数据
+
+        Args:
+            page: 页码，从1开始
+            as_model: 是否返回结构化数据模型
+
+        Returns:
+            字典或XueqiuHotSearchResponse对象
+        """
+        url = f"https://xueqiu.com/statuses/hot/listV2.json?since_id=-1&max_id=-1&size=10&page={page}&type=news"
+        try:
+            response = requests.get(url, headers=self.headers, timeout=10)
+            if response.status_code != 200:
+                logger.error(f"获取雪球新闻数据失败：HTTP状态码 {response.status_code}")
+                return (
+                    {}
+                    if not as_model
+                    else XueqiuHotSearchResponse(
+                        items=[],
+                        last_list_time=0,
+                        next_refresh_time=0,
+                        version=0,
+                        current_page=0,
+                        total_page=0,
+                    )
+                )
+
+            data = response.json()
+
+            # 保存原始数据
+            if self.save_data:
+                self._save_json_data(data, "xueqiu_news")
+
+            # 更新缓存
+            self._news_data = data
+
+            # 返回数据或模型
+            if not as_model:
+                return data
+            else:
+                # 解析数据为模型
+                news_items = []
+                for item in data.get("items", []):
+                    news_items.append(
+                        XueqiuNewsItem(
+                            item_key=item.get("item_id", ""),
+                            title=item.get("title", ""),
+                            www_url=item.get("target", ""),
+                            created_at=int(item.get("created_at", 0)),
+                        )
+                    )
+
+                return XueqiuHotSearchResponse(
+                    items=news_items,
+                    last_list_time=data.get("last_list_time", 0),
+                    next_refresh_time=data.get("next_refresh_time", 0),
+                    version=data.get("version", 0),
+                    current_page=page,
+                    total_page=data.get("total_page", 1),
+                )
+        except Exception as e:
+            logger.error(f"获取雪球新闻数据异常: {e}")
+            return (
+                {}
+                if not as_model
+                else XueqiuHotSearchResponse(
+                    items=[],
+                    last_list_time=0,
+                    next_refresh_time=0,
+                    version=0,
+                    current_page=0,
+                    total_page=0,
+                )
+            )
+
+    def get_notice(
+        self, page: int = 1, as_model: bool = False
+    ) -> Union[Dict[str, Any], XueqiuHotSearchResponse]:
+        """获取雪球公告数据
+
+        Args:
+            page: 页码，从1开始
+            as_model: 是否返回结构化数据模型
+
+        Returns:
+            字典或XueqiuHotSearchResponse对象
+        """
+        url = f"https://xueqiu.com/statuses/hot/listV2.json?since_id=-1&max_id=-1&size=10&page={page}&type=notice"
+        try:
+            response = requests.get(url, headers=self.headers, timeout=10)
+            if response.status_code != 200:
+                logger.error(f"获取雪球公告数据失败：HTTP状态码 {response.status_code}")
+                return (
+                    {}
+                    if not as_model
+                    else XueqiuHotSearchResponse(
+                        items=[],
+                        last_list_time=0,
+                        next_refresh_time=0,
+                        version=0,
+                        current_page=0,
+                        total_page=0,
+                    )
+                )
+
+            data = response.json()
+
+            # 保存原始数据
+            if self.save_data:
+                self._save_json_data(data, "xueqiu_notice")
+
+            # 更新缓存
+            self._notice_data = data
+
+            # 返回数据或模型
+            if not as_model:
+                return data
+            else:
+                # 解析数据为模型
+                notice_items = []
+                for item in data.get("items", []):
+                    notice_items.append(
+                        XueqiuNoticeItem(
+                            item_key=item.get("item_id", ""),
+                            title=item.get("title", ""),
+                            www_url=item.get("target", ""),
+                            created_at=int(item.get("created_at", 0)),
+                        )
+                    )
+
+                return XueqiuHotSearchResponse(
+                    items=notice_items,
+                    last_list_time=data.get("last_list_time", 0),
+                    next_refresh_time=data.get("next_refresh_time", 0),
+                    version=data.get("version", 0),
+                    current_page=page,
+                    total_page=data.get("total_page", 1),
+                )
+        except Exception as e:
+            logger.error(f"获取雪球公告数据异常: {e}")
+            return (
+                {}
+                if not as_model
+                else XueqiuHotSearchResponse(
+                    items=[],
+                    last_list_time=0,
+                    next_refresh_time=0,
+                    version=0,
+                    current_page=0,
+                    total_page=0,
+                )
+            )
+
+    def get_items(
+        self, sub_tab: str = "topic", page: int = 1, as_model: bool = False
+    ) -> Union[
+        List[Dict[str, Any]],
+        List[Union[XueqiuTopicItem, XueqiuNewsItem, XueqiuNoticeItem]],
+    ]:
+        """获取数据条目列表
+
+        Args:
+            sub_tab: 子标签，支持"topic"、"news"、"notice"
+            page: 页码，从1开始
+            as_model: 是否返回结构化数据模型
+
+        Returns:
+            字典列表或模型对象列表
+        """
+        if sub_tab == "topic":
+            data = self.get_topic(page, as_model)
+        elif sub_tab == "news":
+            data = self.get_news(page, as_model)
+        elif sub_tab == "notice":
+            data = self.get_notice(page, as_model)
+        else:
+            logger.error(f"不支持的子标签: {sub_tab}")
+            return []
+
+        if isinstance(data, dict):
+            return data.get("items", [])
+        elif isinstance(data, XueqiuHotSearchResponse):
+            return data.items
+        return []
+
+    @property
+    def topic_items(self) -> List[XueqiuTopicItem]:
+        """获取话题条目列表"""
+        if not self._topic_data:
+            self.get_topic(as_model=True)
+        return self.get_items(sub_tab="topic", as_model=True)
+
+    @property
+    def news_items(self) -> List[XueqiuNewsItem]:
+        """获取新闻条目列表"""
+        if not self._news_data:
+            self.get_news(as_model=True)
+        return self.get_items(sub_tab="news", as_model=True)
+
+    @property
+    def notice_items(self) -> List[XueqiuNoticeItem]:
+        """获取公告条目列表"""
+        if not self._notice_data:
+            self.get_notice(as_model=True)
+        return self.get_items(sub_tab="notice", as_model=True)
+
+    def get_topics_by_keyword(self, keyword: str) -> List[XueqiuTopicItem]:
+        """按关键词搜索话题
+
+        Args:
+            keyword: 关键词
+
+        Returns:
+            匹配的话题列表
+        """
+        if not keyword:
+            return []
+
+        items = self.topic_items
+        return [item for item in items if keyword in item.title or keyword in item.desc]
+
+    def get_topics_sorted_by_reads(self, reverse: bool = True) -> List[XueqiuTopicItem]:
+        """获取按阅读量排序的话题
+
+        Args:
+            reverse: 是否从高到低排序，默认为True
+
+        Returns:
+            排序后的话题列表
+        """
+        items = self.topic_items
+        # 过滤掉没有阅读数的项
+        items_with_reads = [item for item in items if item.read_count is not None]
+        return sorted(
+            items_with_reads, key=lambda x: x.read_count or 0, reverse=reverse
+        )
+
+    def get_news_sorted_by_time(self, reverse: bool = True) -> List[XueqiuNewsItem]:
+        """获取按时间排序的新闻
+
+        Args:
+            reverse: 是否从新到旧排序，默认为True
+
+        Returns:
+            排序后的新闻列表
+        """
+        items = self.news_items
+        return sorted(items, key=lambda x: x.created_at, reverse=reverse)
+
+    def get_notice_sorted_by_time(self, reverse: bool = True) -> List[XueqiuNoticeItem]:
+        """获取按时间排序的公告
+
+        Args:
+            reverse: 是否从新到旧排序，默认为True
+
+        Returns:
+            排序后的公告列表
+        """
+        items = self.notice_items
+        return sorted(items, key=lambda x: x.created_at, reverse=reverse)
+
+    def get_topics_with_positive_stocks(self) -> List[XueqiuTopicItem]:
+        """获取包含上涨股票的话题
+
+        Returns:
+            包含上涨股票的话题列表
+        """
+        items = self.topic_items
+        return [item for item in items if len(item.get_positive_stocks()) > 0]
+
+    def get_topics_with_negative_stocks(self) -> List[XueqiuTopicItem]:
+        """获取包含下跌股票的话题
+
+        Returns:
+            包含下跌股票的话题列表
+        """
+        items = self.topic_items
+        return [item for item in items if len(item.get_negative_stocks()) > 0]
 
 
 @dataclass
@@ -70,6 +599,7 @@ class Config:
         )
 
 
+# 替换XueqiuDataCollector类，使用新的XueqiuClient类
 class XueqiuDataCollector:
     """雪球数据收集器"""
 
@@ -96,6 +626,11 @@ class XueqiuDataCollector:
         self.hot_discussion_count = hot_discussion_count
         self.comment_count = comment_count
 
+        # 创建雪球客户端
+        self.client = XueqiuClient(
+            auth_token=self.headers.get("Authorization"), save_data=False
+        )
+
     def _load_headers(self, headers_path: Path) -> Dict[str, str]:
         """加载请求头配置"""
         if headers_path.exists():
@@ -104,20 +639,68 @@ class XueqiuDataCollector:
         return {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             "Referer": "https://xueqiu.com/",
+            "Authorization": "Bearer b4abc833-112a-11f0-8295-3292b700066c",
         }
 
     def get_xueqiu_hot(self) -> Dict[str, Any]:
         """获取雪球热榜数据"""
         try:
-            # 使用rebang模块获取数据
-            data = get_tab_data("xueqiu")
-            if not data or not data.get("hot_items"):
-                logger.error("获取雪球热榜数据失败：数据为空")
-                return {}
+            # 使用XueqiuClient获取数据
+            topic_data = self.client.get_topic(as_model=True)
 
-            # 添加时间戳
-            data["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            return data
+            # 转换为适合显示的格式
+            hot_items = []
+
+            for index, item in enumerate(topic_data.items):
+                # 提取股票信息
+                stocks_info = []
+                positive_count = 0
+                negative_count = 0
+
+                for stock in item.stocks:
+                    stock_info = {
+                        "name": stock.name,
+                        "percentage": stock.percentage,
+                        "trend": (
+                            "上涨"
+                            if stock.percentage > 0
+                            else "下跌" if stock.percentage < 0 else "持平"
+                        ),
+                    }
+                    stocks_info.append(stock_info)
+
+                    if stock.percentage > 0:
+                        positive_count += 1
+                    elif stock.percentage < 0:
+                        negative_count += 1
+
+                # 构建热榜项数据
+                hot_item = {
+                    "title": item.title,
+                    "description": item.desc,
+                    "link": item.www_url,
+                    "reason": item.reason,
+                    "hot_value": str(item.read_count) if item.read_count else "",
+                    "stocks": stocks_info,
+                    "is_highlighted": positive_count
+                    > negative_count,  # 上涨股票多于下跌股票时高亮
+                    "position": index + 1,
+                    "item_id": item.item_key,
+                }
+
+                hot_items.append(hot_item)
+
+            result = {
+                "hot_items": hot_items,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "metadata": {
+                    "source": "xueqiu",
+                    "hot_count": len(hot_items),
+                    "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                },
+            }
+
+            return result
         except Exception as e:
             logger.error(f"获取雪球热榜数据失败: {e}")
             return {}
@@ -176,17 +759,36 @@ class XueqiuDataCollector:
             return {}
 
         try:
+            # 获取包含关键词的话题
+            matched_topics = self.client.get_topics_by_keyword(topic_word)
+
+            if not matched_topics:
+                # 如果没有匹配的话题，返回基本信息
+                search_word = topic_word.replace("#", "").replace(" ", "%20")
+                detail_url = f"https://xueqiu.com/k?q={search_word}"
+
+                return {
+                    "topic_id": f"xueqiu_topic_{hash(topic_word) % 10000000}",
+                    "title": topic_word,
+                    "view_count": 0,
+                    "discussion_count": 0,
+                    "url": detail_url,
+                }
+
+            # 使用第一个匹配的话题
+            topic = matched_topics[0]
+
             # 构建搜索URL
             search_word = topic_word.replace("#", "").replace(" ", "%20")
-            detail_url = f"https://xueqiu.com/k?q={search_word}"
+            detail_url = topic.www_url or f"https://xueqiu.com/k?q={search_word}"
 
-            # 这里只是模拟数据，实际项目中应该解析HTML或调用API
             return {
-                "topic_id": f"xueqiu_topic_{hash(topic_word) % 10000000}",
-                "title": topic_word,
-                "view_count": 5000,
+                "topic_id": topic.item_key,
+                "title": topic.title,
+                "view_count": topic.read_count or 5000,
                 "discussion_count": 120,
                 "url": detail_url,
+                "description": topic.desc,
             }
         except Exception as e:
             logger.error(f"获取话题详情失败: {e}")
@@ -214,18 +816,6 @@ class XueqiuDataCollector:
                 }
             )
         return comments
-
-    def parse_hot_list(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """解析热榜数据
-
-        Args:
-            data: 原始数据
-        """
-        if not data or "hot_items" not in data:
-            return []
-
-        hot_items = data.get("hot_items", [])
-        return hot_items
 
     def collect_data(self) -> Dict[str, Any]:
         """收集雪球数据并整合"""
