@@ -53,12 +53,12 @@ class NetEaseNewsDataCollector:
     """网易新闻数据收集器"""
 
     def __init__(
-            self,
-            data_dir: Path,
-            hot_count: int = 50,
-            hot_topic_count: int = 10,
-            comment_count: int = 10,
-            api_token: str = None,
+        self,
+        data_dir: Path,
+        hot_count: int = 50,
+        hot_topic_count: int = 10,
+        comment_count: int = 10,
+        api_token: str = None,
     ):
         """初始化数据收集器
 
@@ -167,7 +167,7 @@ class NetEaseNewsDataCollector:
                     "comments": [
                         {
                             "content": item.hot_comment
-                                       or f"评论内容 {i + 1} 关于{keyword}",
+                            or f"评论内容 {i + 1} 关于{keyword}",
                             "user": f"网易用户_{i + 1}",
                             "likes": (
                                 (item.reply_count or 0) // (i + 1)
@@ -286,9 +286,7 @@ class NetEaseNewsPlugin(BasePlugin):
         )
 
         # 设置定时任务，定期获取热榜数据
-        scheduler.add_random_minute_task(
-            self.fetch_netease_news, 0, self.config.update_interval, 5
-        )
+        scheduler.add_random_minute_task(self.fetch_netease_news, 0, 5)
 
         # 立即执行一次数据获取
         await self.fetch_netease_news()
@@ -429,7 +427,7 @@ class NetEaseNewsPlugin(BasePlugin):
         return self.data_collector.get_news_detail(keyword)
 
     def format_hot_list_simple(
-            self, hot_data: Dict[str, Any], count: int = None
+        self, hot_data: Dict[str, Any], count: int = None
     ) -> str:
         """格式化简约版热榜消息"""
         if not hot_data:
@@ -458,7 +456,7 @@ class NetEaseNewsPlugin(BasePlugin):
         return message
 
     def format_hot_list_detail(
-            self, hot_data: Dict[str, Any], count: int = None
+        self, hot_data: Dict[str, Any], count: int = None
     ) -> str:
         """格式化详情版热榜消息"""
         if not hot_data:
