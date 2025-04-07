@@ -218,4 +218,4 @@ bilibili_client.export_items(items, format="csv", file_path="output.csv")
 
 ## 详细文档
 
-查看[客户端文档](./clients/README.md)了解每个热榜客户端的详细用法。
+查看[客户端文档](clients/README.md)了解每个热榜客户端的详细用法。

@@ -11,7 +11,7 @@ from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 
 from hotsearch.api.xiaohongshu import XiaohongshuClient
 from hotsearch.api.xiaohongshu import XiaohongshuHotSearchItem
-from scheduler import scheduler
+from utils import scheduler
 
 bot = CompatibleEnrollment
 

@@ -4,16 +4,16 @@
 
 ## 客户端列表
 
-- [热榜综合 (TopClient)](./top.md)
-- [腾讯新闻 (TencentNewsClient)](./tencent_news.md)
-- [澎湃新闻 (ThePaperClient)](./thepaper.md)
-- [今日头条 (ToutiaoClient)](./toutiao.md)
-- [网易新闻 (NetEaseNewsClient)](./ne_news.md)
-- [百度热搜 (BaiduClient)](./baidu.md)
-- [小红书 (XiaohongshuClient)](./xiaohongshu.md)
-- [雪球热帖 (XueqiuClient)](./xueqiu.md)
-- [掘金 (JuejinClient)](./juejin.md)
-- [B站热门 (BilibiliClient)](./bilibili.md)
+- [热榜综合 (TopClient)](top.md)
+- [腾讯新闻 (TencentNewsClient)](tencent_news.md)
+- [澎湃新闻 (ThePaperClient)](thepaper.md)
+- [今日头条 (ToutiaoClient)](toutiao.md)
+- [网易新闻 (NetEaseNewsClient)](ne_news.md)
+- [百度热搜 (BaiduClient)](baidu.md)
+- [小红书 (XiaohongshuClient)](xiaohongshu.md)
+- [雪球热帖 (XueqiuClient)](xueqiu.md)
+- [掘金 (JuejinClient)](juejin.md)
+- [B站热门 (BilibiliClient)](bilibili.md)
 
 ## 基础客户端类
 

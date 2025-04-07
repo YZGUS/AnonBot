@@ -16,7 +16,7 @@ from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 
 from hotsearch.api import BaiduClient
 from hotsearch.api.models.baidu import BaiduHotSearchResponse
-from scheduler import scheduler
+from utils import scheduler
 
 logger = logging.getLogger("baidu")
 bot = CompatibleEnrollment

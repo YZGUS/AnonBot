@@ -11,7 +11,7 @@ from hotsearch.api import TencentNewsClient
 from hotsearch.api.models.tencent_news import (
     TencentNewsHotSearchItem,
 )
-from scheduler import scheduler
+from utils import scheduler
 
 bot = CompatibleEnrollment
 

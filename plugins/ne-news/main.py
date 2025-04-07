@@ -11,7 +11,7 @@ from ncatbot.core.message import GroupMessage
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 
 from hotsearch.api import NetEaseNewsClient
-from scheduler import scheduler
+from utils import scheduler
 
 # 创建logger
 logger = logging.getLogger("NetEaseNewsPlugin")

@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 from ncatbot.core.message import GroupMessage, PrivateMessage
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 
-from scheduler import scheduler
+from utils import scheduler
 
 bot = CompatibleEnrollment
 

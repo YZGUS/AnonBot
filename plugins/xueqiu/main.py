@@ -18,7 +18,7 @@ from hotsearch.api.models.xueqiu import (
     XueqiuNewsItem,
     XueqiuNoticeItem,
 )
-from scheduler import scheduler
+from utils import scheduler
 
 # 配置日志
 logger = logging.getLogger("xueqiu")

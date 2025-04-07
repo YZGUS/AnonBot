@@ -11,7 +11,7 @@ from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 
 from hotsearch.api.baidu_tieba import BaiduTiebaClient
 from hotsearch.api.models.baidu_tieba import BaiduTiebaHotTopicItem
-from scheduler import scheduler
+from utils import scheduler
 
 bot = CompatibleEnrollment
 
@@ -38,7 +38,9 @@ class Config:
             whitelist_users=whitelist.get("user_ids", []),
             hot_count=data.get("hot_count", 20),
             update_interval=data.get("update_interval", 300),
-            auth_token=api.get("auth_token", "Bearer b4abc833-112a-11f0-8295-3292b700066c"),
+            auth_token=api.get(
+                "auth_token", "Bearer b4abc833-112a-11f0-8295-3292b700066c"
+            ),
         )
 
 
@@ -95,7 +97,11 @@ class TiebaPlugin(BasePlugin):
     def init_tieba_client(self) -> None:
         """初始化百度贴吧客户端"""
         try:
-            auth_token = self.config.auth_token if self.config else "Bearer b4abc833-112a-11f0-8295-3292b700066c"
+            auth_token = (
+                self.config.auth_token
+                if self.config
+                else "Bearer b4abc833-112a-11f0-8295-3292b700066c"
+            )
             data_dir = str(self.data_dir)
 
             self.tieba_client = BaiduTiebaClient(
@@ -169,7 +175,9 @@ class TiebaPlugin(BasePlugin):
         except Exception as e:
             print(f"清理旧文件失败: {e}")
 
-    def get_hot_topics(self, count: Optional[int] = None) -> List[BaiduTiebaHotTopicItem]:
+    def get_hot_topics(
+        self, count: Optional[int] = None
+    ) -> List[BaiduTiebaHotTopicItem]:
         """获取热门话题列表"""
         if not self.tieba_client or not self.latest_data:
             return []
@@ -213,13 +221,19 @@ class TiebaPlugin(BasePlugin):
             return []
 
         # 标题和描述中包含关键词的话题
-        return [item for item in self.latest_data if keyword in item.name or keyword in item.desc]
+        return [
+            item
+            for item in self.latest_data
+            if keyword in item.name or keyword in item.desc
+        ]
 
     def get_timestamp_str(self) -> str:
         """获取当前时间字符串"""
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    def format_hot_topics_message(self, items: List[BaiduTiebaHotTopicItem], count: Optional[int] = None) -> str:
+    def format_hot_topics_message(
+        self, items: List[BaiduTiebaHotTopicItem], count: Optional[int] = None
+    ) -> str:
         """格式化热门话题消息"""
         if not items:
             return "❌ 获取百度贴吧热门话题失败，请稍后再试"
@@ -257,13 +271,17 @@ class TiebaPlugin(BasePlugin):
             elif item.topic_tag == 3:
                 tag_str = " [体育]"
 
-            message += f"{prefix}{name}{tag_str}\n📝 {desc}\n💬 讨论数: {discuss_num}\n\n"
+            message += (
+                f"{prefix}{name}{tag_str}\n📝 {desc}\n💬 讨论数: {discuss_num}\n\n"
+            )
 
         message += f"━━━━━━━━━━━━━━━━━━\n📊 更新时间: {timestamp}\n💡 提示: 发送「贴吧热榜 数字」可指定获取的条数"
 
         return message
 
-    def format_search_results(self, keyword: str, items: List[BaiduTiebaHotTopicItem]) -> str:
+    def format_search_results(
+        self, keyword: str, items: List[BaiduTiebaHotTopicItem]
+    ) -> str:
         """格式化搜索结果消息"""
         if not items:
             return f"❌ 没有找到包含「{keyword}」的贴吧热门话题"
@@ -287,13 +305,17 @@ class TiebaPlugin(BasePlugin):
             elif item.topic_tag == 3:
                 tag_str = " [体育]"
 
-            message += f"{rank}. {name}{tag_str}\n📝 {desc}\n💬 讨论数: {discuss_num}\n\n"
+            message += (
+                f"{rank}. {name}{tag_str}\n📝 {desc}\n💬 讨论数: {discuss_num}\n\n"
+            )
 
         message += f"━━━━━━━━━━━━━━━━━━\n📊 更新时间: {timestamp}\n💡 提示: 发送「贴吧热榜」可查看完整热榜内容"
 
         return message
 
-    async def handle_command(self, cmd_type: str, param: Optional[str]) -> Union[str, None]:
+    async def handle_command(
+        self, cmd_type: str, param: Optional[str]
+    ) -> Union[str, None]:
         """处理命令并返回回复消息"""
         if cmd_type == "hot_topics":
             count = int(param) if param else None

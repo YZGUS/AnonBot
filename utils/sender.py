@@ -1,7 +1,7 @@
 import http.client
 import json
 import logging
-from typing import Dict, Any, Union
+from typing import Dict, Any
 
 
 def build_text_message(text: str) -> Dict[str, Any]:
@@ -16,9 +16,7 @@ def build_text_message(text: str) -> Dict[str, Any]:
     return {"type": "text", "data": {"text": text}}
 
 
-def build_custom_music_card(
-        url: str, audio: str, title: str, image: str, singer: str
-) -> Dict[str, Any]:
+def build_custom_music_card(url: str, audio: str, title: str, image: str, singer: str) -> Dict[str, Any]:
     """构建自定义音乐卡片
 
     Args:
@@ -58,13 +56,10 @@ class MessageSender:
         self.port = port
         self.logger = logging.getLogger("MessageSender")
 
-    async def send_group_msg(
-            self, group_id: Union[int, str], message: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def send_group_msg(self, message: Dict[str, Any]) -> Dict[str, Any]:
         """发送群消息
 
         Args:
-            group_id: 群ID
             message: 消息内容字典，作为请求payload直接发送
 
         Returns:
@@ -84,13 +79,10 @@ class MessageSender:
             self.logger.error(f"发送群消息失败: {str(e)}")
             return {"status": "failed", "message": f"发送请求错误: {str(e)}"}
 
-    async def send_private_msg(
-            self, user_id: Union[int, str], message: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def send_private_msg(self, message: Dict[str, Any]) -> Dict[str, Any]:
         """发送私聊消息
 
         Args:
-            user_id: 用户ID
             message: 消息内容字典，作为请求payload直接发送
 
         Returns:
