@@ -214,9 +214,7 @@ class ChatRecordPlugin(BasePlugin):
         scheduler.add_task(self.check_config_update, 30)  # 每30秒检查一次配置更新
 
         # 添加聊天记录备份任务
-        scheduler.add_task(
-            self.backup_daily_records, 3600
-        )  # 每小时检查一次是否需要备份
+        scheduler.add_task(self.backup_daily_records, 3600)  # 每小时检查一次是否需要备份
 
     def load_config(self) -> None:
         """加载配置文件"""

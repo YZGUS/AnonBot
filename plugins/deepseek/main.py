@@ -75,9 +75,7 @@ class DeepSeekPlugin(BasePlugin):
         scheduler.add_task(self.check_config_update, 30)  # 每30秒检查一次配置更新
 
         # 添加定期保存对话历史任务
-        scheduler.add_task(
-            self.save_conversation_history, 300
-        )  # 每5分钟保存一次对话历史
+        scheduler.add_task(self.save_conversation_history, 300)  # 每5分钟保存一次对话历史
 
     def load_conversation_history(self) -> None:
         """加载对话历史"""
@@ -234,8 +232,8 @@ class DeepSeekPlugin(BasePlugin):
         # 限制历史记录长度，保留最近的10轮对话（20条消息）
         if len(self.conversation_history[user_id_str]) > 20:
             self.conversation_history[user_id_str] = self.conversation_history[
-                user_id_str
-            ][-20:]
+                                                         user_id_str
+                                                     ][-20:]
 
     def clear_history(self, user_id: Union[int, str]) -> None:
         """清除用户的对话历史"""
@@ -244,11 +242,11 @@ class DeepSeekPlugin(BasePlugin):
             self.conversation_history[user_id_str] = []
 
     async def call_deepseek_api(
-        self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = 4000,
+            self,
+            messages: List[Dict[str, str]],
+            model: Optional[str] = None,
+            temperature: Optional[float] = None,
+            max_tokens: Optional[int] = 4000,
     ) -> Dict[str, Any]:
         """调用DeepSeek API"""
         if not self.config or not self.config.api_key:

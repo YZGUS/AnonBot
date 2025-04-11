@@ -198,6 +198,7 @@ plugins/ne-news/config/config.toml
 plugins/ne-news/config/headers.json
 plugins/xiaohongshu/config/config.toml
 plugins/xiaohongshu/config/headers.json
+plugins/stock/config/config.toml
 
 # 日志和插件数据目录
 logs/

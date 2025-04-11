@@ -1,0 +1,11 @@
+# 股票数据API配置
+[api]
+provider = "your_api_provider" #  例如： sina, tushare
+api_key = "your_api_key_here"
+
+# 白名单配置
+[whitelist]
+# 允许使用股票插件的群组ID列表
+group_ids = [335987214]
+# 允许使用股票插件的用户ID列表
+user_ids = [953433612]

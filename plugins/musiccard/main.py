@@ -7,9 +7,9 @@ from typing import List, Dict, Any, Optional
 from ncatbot.core.message import GroupMessage, PrivateMessage
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 from qqmusic_api import search as qq_search
-
 from utils import scheduler
-from utils import MessageSender, build_custom_music_card, build_text_message
+
+from sender import MessageSender, build_custom_music_card, build_text_message
 
 bot = CompatibleEnrollment
 

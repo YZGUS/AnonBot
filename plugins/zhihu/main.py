@@ -1,6 +1,5 @@
 import json
 import os
-import time
 import tomllib
 from dataclasses import dataclass
 from datetime import datetime
@@ -271,142 +270,7 @@ class ZhihuDataCollector:
                 return []
         except Exception as e:
             print(f"获取知乎热榜出错: {str(e)}")
-            import traceback
-
-            traceback.print_exc()
             return []
-
-    def get_top_answers(self, question_id: str) -> List[Dict[str, Any]]:
-        """获取单个问题的高赞回答"""
-        if not question_id:
-            print(f"问题ID为空，跳过获取回答")
-            return []
-
-        url = f"https://www.zhihu.com/question/{question_id}"
-        try:
-            print(f"开始获取问题 {question_id} 的回答")
-
-            response = requests.get(url, headers=self.headers)
-            if response.status_code != 200:
-                print(f"获取问题 {question_id} 失败，状态码: {response.status_code}")
-                return []
-
-            # 调试模式下保存响应内容到文件，用于分析
-            if self.debug_mode:
-                question_file = self.data_dir / f"zhihu_question_{question_id}.html"
-                with open(question_file, "w", encoding="utf-8") as f:
-                    f.write(response.text)
-                print(f"已保存问题页面到 {question_file}")
-
-            soup = BeautifulSoup(response.text, "html.parser")
-            script_tag = soup.find("script", id="js-initialData")
-            if not script_tag:
-                print(f"未找到问题 {question_id} 数据")
-                return []
-
-            # 调试模式下保存脚本内容，用于分析
-            if self.debug_mode:
-                with open(
-                        self.data_dir / f"zhihu_question_{question_id}_data.json",
-                        "w",
-                        encoding="utf-8",
-                ) as f:
-                    f.write(str(script_tag.string))
-
-            init_data = json.loads(script_tag.string)
-            entities = init_data.get("initialState", {}).get("entities", {})
-
-            # 提取回答数据
-            answers = entities.get("answers", {})
-            if not answers:
-                print(f"问题 {question_id} 没有回答数据")
-                return []
-
-            print(f"问题 {question_id} 找到 {len(answers)} 个回答")
-
-            answer_list = []
-            for k, v in answers.items():
-                try:
-                    # 提取回答内容并转换为纯文本
-                    content_html = v.get("content", "")
-                    content_text = BeautifulSoup(content_html, "html.parser").get_text(
-                        strip=True
-                    )
-                    # 限制内容长度
-                    if len(content_text) > 500:
-                        content_text = content_text[:500] + "..."
-
-                    # 获取作者信息
-                    author_info = v.get("author", {})
-                    author_name = author_info.get("name", "匿名用户")
-                    if not author_name and author_info.get("id") == "0":
-                        author_name = "匿名用户"
-
-                    # 创建时间格式化
-                    created_time = "未知时间"
-                    if v.get("createdTime"):
-                        try:
-                            created_time = time.strftime(
-                                "%Y-%m-%d %H:%M:%S",
-                                time.localtime(v.get("createdTime", 0)),
-                            )
-                        except:
-                            pass
-
-                    answer_list.append(
-                        {
-                            "answer_id": k,
-                            "content": content_text,
-                            "voteup_count": v.get("voteupCount", 0),
-                            "author": author_name,
-                            "created_time": created_time,
-                        }
-                    )
-                except Exception as e:
-                    print(f"处理回答 {k} 时出错: {str(e)}")
-                    continue
-
-            # 按点赞数降序排列并限制数量
-            sorted_answers = sorted(
-                answer_list, key=lambda x: x["voteup_count"], reverse=True
-            )[: self.answer_count]
-
-            print(f"问题 {question_id} 成功提取 {len(sorted_answers)} 个高赞回答")
-            return sorted_answers
-        except Exception as e:
-            print(f"获取问题 {question_id} 回答失败: {str(e)}")
-            import traceback
-
-            traceback.print_exc()
-            return []
-
-    def collect_data(self) -> List[Dict[str, Any]]:
-        """收集知乎热榜数据和回答"""
-        # 获取热榜数据
-        hot_list = self.get_zhihu_hot()
-        if not hot_list:
-            return []
-
-        # 获取每个问题的回答
-        results = []
-        for index, item in enumerate(hot_list):
-            try:
-                print(f"正在处理 [{index + 1}/{len(hot_list)}] {item['title']}")
-
-                # 获取问题的回答
-                answers = self.get_top_answers(item["question_id"])
-
-                # 构建完整数据结构
-                full_item = {**item, "top_answers": answers}
-
-                results.append(full_item)
-            except Exception as e:
-                print(f"处理问题 {item.get('question_id', '未知ID')} 时出错: {str(e)}")
-                # 继续处理下一个问题
-                continue
-
-        print(f"成功收集热榜数据，共 {len(results)} 条")
-        return results
 
     def save_data(self, data: List[Dict[str, Any]]) -> str:
         """保存数据到文件"""
@@ -525,7 +389,7 @@ class ZhihuPlugin(BasePlugin):
             )
 
             # 收集数据
-            hot_items = collector.collect_data()
+            hot_items = collector.get_zhihu_hot()
             if not hot_items:
                 print("获取热榜失败")
                 return
