@@ -23,25 +23,22 @@ bot = CompatibleEnrollment  # 兼容回调函数注册器
 logger = logging.getLogger(__name__)
 
 # Configure Matplotlib for CJK font
-try:
-    # Provide a list of potential CJK fonts, matplotlib will use the first one found.
-    plt.rcParams["font.sans-serif"] = [
-        "SimHei",
-        "PingFang SC",
-        "Heiti SC",
-        "STHeiti",
-        "Microsoft YaHei",
-    ]
-    plt.rcParams["axes.unicode_minus"] = False  # Handle negative signs correctly
-    # Verify the actually used font (optional)
-    # from matplotlib.font_manager import findfont, FontProperties
-    # font_path = findfont(FontProperties(family=plt.rcParams['font.sans-serif']))
-    # logger.info(f"Matplotlib is using font: {font_path}")
-    logger.info(
-        f"Attempted to set Matplotlib font to one of: {plt.rcParams['font.sans-serif']}"
-    )
-except Exception as e:
-    logger.warning(f"Failed to set preferred CJK fonts for Matplotlib: {e}")
+# Provide a list of potential CJK fonts, matplotlib will use the first one found.
+plt.rcParams["font.sans-serif"] = [
+    "SimHei",
+    "PingFang SC",
+    "Heiti SC",
+    "STHeiti",
+    "Microsoft YaHei",
+]
+plt.rcParams["axes.unicode_minus"] = False  # Handle negative signs correctly
+# Verify the actually used font (optional)
+# from matplotlib.font_manager import findfont, FontProperties
+# font_path = findfont(FontProperties(family=plt.rcParams['font.sans-serif']))
+# logger.info(f"Matplotlib is using font: {font_path}")
+logger.info(
+    f"Attempted to set Matplotlib font to one of: {plt.rcParams['font.sans-serif']}"
+)
 
 
 @dataclass
@@ -58,7 +55,7 @@ class Config:
 
 
 async def generate_stock_chart(
-    df: pd.DataFrame, stock_code: str, days: int = 90
+        df: pd.DataFrame, stock_code: str, days: int = 90
 ) -> Optional[str]:
     """为最近 N 天的数据生成收盘价图表并保存到文件"""
     if df.empty:
@@ -131,11 +128,11 @@ async def generate_stock_chart(
 
 
 async def fetch_stock_historical_data(
-    stock_code: str,
-    period: str = "daily",
-    start_date: str = "19700101",
-    end_date: str = "20500101",
-    adjust: str = "",
+        stock_code: str,
+        period: str = "daily",
+        start_date: str = "19700101",
+        end_date: str = "20500101",
+        adjust: str = "",
 ) -> Union[pd.DataFrame, str]:
     """
     获取股票历史数据 DataFrame 或错误信息字符串。
@@ -174,11 +171,11 @@ async def fetch_stock_historical_data(
 
 
 def format_historical_data_text(
-    df: pd.DataFrame,
-    stock_code: str,
-    period: str,
-    adjust: str,
-    max_rows: int = 30,
+        df: pd.DataFrame,
+        stock_code: str,
+        period: str,
+        adjust: str,
+        max_rows: int = 30,
 ) -> str:
     """将 DataFrame 格式化为对齐的文本表格"""
     if df.empty:
@@ -230,20 +227,20 @@ def format_historical_data_text(
         floatfmt=".2f",  # 浮点数格式
     )
 
-    response = f"{title}\\n" f"-------------------------------------\\n" f"{table_str}"
+    response = f"{title}\n" f"-------------------------------------\n" f"{table_str}"
 
     # 再次检查总长度，如果太长可能需要进一步截断或提示
     if len(response) > 2000:
         logger.warning(
             f"格式化后的历史数据响应过长 ({len(response)} chars)，可能无法完整发送。"
         )
-        response += "\\n(⚠️ 数据过多，可能显示不全)"  # 添加提示
+        response += "\n(⚠️ 数据过多，可能显示不全)"  # 添加提示
 
     return response
 
 
 async def generate_historical_data_table_image(
-    df: pd.DataFrame, stock_code: str, max_rows: int = 30
+        df: pd.DataFrame, stock_code: str, max_rows: int = 30
 ) -> Optional[str]:
     """将 DataFrame 渲染为历史数据表格图片并保存。"""
     if df.empty:
@@ -432,7 +429,7 @@ async def handle_historical_command(cmd: str) -> List[Dict[str, str]]:
     if not hist_parts:
         return [
             {
-                "text": "❌ 历史命令错误：需要提供股票代码。\\n格式：历史 <代码> [周期] [开始] [结束] [复权]"
+                "text": "❌ 历史命令错误：需要提供股票代码。\n格式：历史 <代码> [周期] [开始] [结束] [复权]"
             }
         ]
 
@@ -470,7 +467,7 @@ async def handle_historical_command(cmd: str) -> List[Dict[str, str]]:
                         data_result, stock_code, period, adjust, max_rows=30
                     )
                     messages_to_send.append(
-                        {"text": text_table + "\\n(⚠️ 图片生成失败)"}
+                        {"text": text_table + "\n(⚠️ 图片生成失败)"}
                     )
                 except Exception as fmt_e:
                     logger.error(f"生成表格图片和文本均失败: {fmt_e}")
@@ -500,16 +497,16 @@ async def get_stock_realtime_data(cmd: str) -> List[Dict[str, str]]:
 
         data = stock_data.iloc[0]
         response = (
-            f"**⏱️ {data['名称']} ({stock_code}) 实时数据**\\n"
-            f"---------------------------\\n"
-            f"💰 最新: {data['最新价']:.2f} | 涨跌: {data['涨跌额']:.2f} ({data['涨跌幅']:.2f}%)\\n"
-            f"📈 今开: {data['今开']:.2f} | 最高: {data['最高']:.2f}\\n"
-            f"📉 最低: {data['最低']:.2f} | 昨收: {data['昨收']:.2f}\\n"
-            f"📊 成交量: {data['成交量'] / 10000:.2f} 万手\\n"
-            f"📊 成交额: {data['成交额'] / 100000000:.2f} 亿元\\n"
-            f"🔄 换手率: {data['换手率']:.2f}%\\n"
-            f"💹 市盈(动): {data['市盈率-动态']:.2f} | 市净率: {data['市净率']:.2f}\\n"
-            f"🏦 总市值: {data['总市值'] / 100000000:.2f} 亿\\n"
+            f"**⏱️ {data['名称']} ({stock_code}) 实时数据**\n"
+            f"---------------------------\n"
+            f"💰 最新: {data['最新价']:.2f} | 涨跌: {data['涨跌额']:.2f} ({data['涨跌幅']:.2f}%)\n"
+            f"📈 今开: {data['今开']:.2f} | 最高: {data['最高']:.2f}\n"
+            f"📉 最低: {data['最低']:.2f} | 昨收: {data['昨收']:.2f}\n"
+            f"📊 成交量: {data['成交量'] / 10000:.2f} 万手\n"
+            f"📊 成交额: {data['成交额'] / 100000000:.2f} 亿元\n"
+            f"🔄 换手率: {data['换手率']:.2f}%\n"
+            f"💹 市盈(动): {data['市盈率-动态']:.2f} | 市净率: {data['市净率']:.2f}\n"
+            f"🏦 总市值: {data['总市值'] / 100000000:.2f} 亿\n"
             f"🏦 流通值: {data['流通市值'] / 100000000:.2f} 亿"
         )
         return [{"text": response}]
@@ -554,10 +551,10 @@ async def get_stock_news(cmd: str) -> List[Dict[str, str]]:
         news_to_display = news_df.head(max_news)  # 在排序后进行截断
 
         response_lines = [f"📰 {stock_code} 相关新闻 (最近 {len(news_to_display)} 条):"]
-        response_lines.append("---------------------------")
+        response_lines.append("---------------------------\n")
 
         for index, row in news_to_display.iterrows():
-            # 格式化单条新闻：标题 (来源 @ 时间) \\n 链接
+            # 格式化单条新闻：标题 (来源 @ 时间) \n 链接
             # 截断长标题
             title = row["新闻标题"]
             if len(title) > 40:
@@ -579,8 +576,8 @@ async def get_stock_news(cmd: str) -> List[Dict[str, str]]:
                 publish_time = publish_time_str  # 保留原始格式
 
             news_line = (
-                f"▪️ {title} \\n"
-                f"  <来源: {row['文章来源']} @ {publish_time}>\\n"
+                f"▪️ {title} \n"
+                f"  <来源: {row['文章来源']} @ {publish_time}>\n"
                 f"  <链接: {row['新闻链接']}>"
             )
             response_lines.append(news_line)
@@ -590,7 +587,7 @@ async def get_stock_news(cmd: str) -> List[Dict[str, str]]:
         if response_lines and response_lines[-1] == "---":
             response_lines.pop()
 
-        final_response = "\\n".join(response_lines)
+        final_response = "\n".join(response_lines)
 
         # 检查最终消息长度
         if len(final_response) > 2000:
@@ -607,7 +604,7 @@ async def get_stock_news(cmd: str) -> List[Dict[str, str]]:
                 2 + (max_news - 2) * estimated_lines_per_news if max_news > 2 else 2,
             )
             final_response = (
-                "\\n".join(response_lines[:lines_to_keep]) + "\\n(⚠️ 新闻过多，已截断)"
+                    "\n".join(response_lines[:lines_to_keep]) + "\n(⚠️ 新闻过多，已截断)"
             )
 
         return [{"text": final_response}]
@@ -847,7 +844,7 @@ async def get_stock_details(cmd: str) -> List[Dict[str, str]]:
         list_date = (
             f"{list_date_str[:4]}-{list_date_str[4:6]}-{list_date_str[6:]}"
             if len(list_date_str) == 8
-            and list_date_str.isdigit()  # Check if it's a valid date string
+               and list_date_str.isdigit()  # Check if it's a valid date string
             else list_date_str
         )
         total_market_cap = format_large_number(info_em_dict.get("总市值", "N/A"))
@@ -951,7 +948,7 @@ async def get_stock_details(cmd: str) -> List[Dict[str, str]]:
         price_change_f = "N/A"
         change_percent_f = "N/A"
         if isinstance(price_change, (int, float)) and isinstance(
-            change_percent, (int, float)
+                change_percent, (int, float)
         ):
             if price_change > 0:
                 price_emoji = "🔼"
@@ -1013,7 +1010,7 @@ async def get_stock_details(cmd: str) -> List[Dict[str, str]]:
     if len(results) <= 2:  # Only header and separator potentially
         return [{"text": f"❌ 未能获取股票 {stock_code} 的任何有效信息。"}]
 
-    return [{"text": "\\n".join(results)}]
+    return [{"text": "\n".join(results)}]
 
 
 async def get_financial_report(cmd: str) -> List[Dict[str, str]]:
@@ -1034,7 +1031,7 @@ async def get_financial_report(cmd: str) -> List[Dict[str, str]]:
             period = row.get("财报期", "未知周期")
             reports.append(f"▪️ {name} ({code}) - {period}")
 
-        response_text = "\\n".join(reports)
+        response_text = "\n".join(reports)
 
         # 检查消息长度
         if len(response_text) > 1800:  # 留一些余量
@@ -1042,7 +1039,7 @@ async def get_financial_report(cmd: str) -> List[Dict[str, str]]:
             # 保留标题和部分内容
             lines_to_keep = 2 + int(1700 / 20)  # 估算每行20字符
             response_text = (
-                "\\n".join(reports[:lines_to_keep]) + "\\n... (内容过长已截断)"
+                    "\n".join(reports[:lines_to_keep]) + "\n... (内容过长已截断)"
             )
 
         return [{"text": response_text}]
@@ -1193,6 +1190,6 @@ class StockPlugin(BasePlugin):
             supported_commands = ", ".join(command_handlers.keys())
             await self.api.post_group_msg(
                 msg.group_id,
-                text=f"❓ 无法识别命令 '{command_keyword}'。\\n支持：{supported_commands}。\\n"
-                f"示例：股票 历史 600519 | 股票 实时 000001",
+                text=f"❓ 无法识别命令 '{command_keyword}'。\n支持：{supported_commands}。\n"
+                     f"示例：股票 历史 600519 | 股票 实时 000001",
             )

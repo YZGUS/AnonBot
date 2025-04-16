@@ -11,7 +11,7 @@ with open("config.toml", "rb") as f:
     cfg = tomllib.load(f)
     config.set_bot_uin(cfg["bot_uin"])
     config.set_ws_uri(cfg["ws_uri"])
-    config.set_token(cfg["token"])
+    config.set_webui_token(cfg["token"])
 
 bot = BotClient()
 
